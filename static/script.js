@@ -22,7 +22,7 @@ async function buscar(consulta) {
     marcarBotonActivo();
 
     pintarDesglose();
-    pintarPrediccion(datos.terminos_expandidos);
+    pintarPrediccion(datos.terminos_expandidos, datos.emojis);
     pintarContador(datos);
     pintarResultados(datos.resultados, datos.terminos_expandidos);
 }
@@ -53,17 +53,31 @@ botonesIdioma.forEach((boton) => {
 
 // --- Pintado de resultados -------------------------------------------
 
-// Muestra a qué términos del vocabulario se expandió la consulta (Q -> F)
-function pintarPrediccion(terminos) {
-    if (!terminos || terminos.length === 0) {
+// Muestra qué entendió el sistema: los emojis detectados (con cuántos
+// documentos lo usan; 0 = se interpretó por su significado) y los términos
+// a los que se expandió la consulta (Q -> F)
+function pintarPrediccion(terminos, emojis) {
+    const hayTerminos = terminos && terminos.length > 0;
+    const hayEmojis = emojis && emojis.length > 0;
+    if (!hayTerminos && !hayEmojis) {
         contenedorPrediccion.innerHTML = "";
         return;
     }
-    const chips = terminos
+    const chipsEmoji = (emojis || [])
+        .map((e) => {
+            const titulo = e.coincidencias > 0
+                ? `${e.coincidencias} documento(s) usan este emoji`
+                : "Ningún documento lo usa: interpretado por su significado";
+            const cuenta = e.coincidencias > 0 ? ` ×${e.coincidencias}` : "";
+            return `<span class="chip chip-emoji" title="${titulo}">${e.emoji}${cuenta}</span>`;
+        })
+        .join("");
+    const chips = (terminos || [])
         .slice(0, 8)
         .map((t) => `<span class="chip">${t}</span>`)
         .join("");
-    contenedorPrediccion.innerHTML = `<span class="etiqueta">Prediciendo:</span>${chips}`;
+    contenedorPrediccion.innerHTML =
+        `<span class="etiqueta">Prediciendo:</span>${chipsEmoji}${chips}`;
 }
 
 function pintarContador(datos) {
@@ -90,7 +104,7 @@ function pintarResultados(items, terminos) {
         li.className = esSecundario ? "resultado secundario" : "resultado";
         li.innerHTML = `
             <span class="indice">#${idx + 1}</span>
-            <span class="emoji">${item.emoji}</span>
+            <span class="emoji${item.emoji_coincide ? " coincide" : ""}">${item.emoji}</span>
             <span class="info">
                 <span class="fila-nombre">
                     <span class="nombre">${resaltar(item.nombre, terminos)}</span>

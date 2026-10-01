@@ -10,7 +10,7 @@ SRI = { D, Q, F, R(qk, dj) }
 
 | Componente | Qué es en este proyecto |
 |---|---|
-| **D** | 151 documentos en `catalogo.json` (1144 es, 16 en, 18 pt). Cada uno con `nombre`, `categoria`, `descripcion` e **`idioma`**. |
+| **D** | 1144 documentos (600 es, 276 en, 268 pt) en `catalogo.json` o en una base SQL. Cada uno con `nombre`, `categoria`, `descripcion` e **`idioma`**. |
 | **Q** | Lo que el usuario escribe en tiempo real, aunque esté incompleto. |
 | **F** | Modelo de Espacio Vectorial TF-IDF, con normalización **por campo** (estilo BM25F). El idioma no forma parte del vector. |
 | **R(qk, dj)** | Similitud coseno sobre ese espacio de términos, **reescalada después** por un factor según el idioma del documento. |
@@ -370,6 +370,7 @@ Notas sobre el contrato:
   interfaz (que los etiqueta como *falso amigo*); no altera el ranking, que
   ya decidió `R(qk, dj)`.
 - `idioma` inválido o ausente cae a `"es"` (`IDIOMA_POR_DEFECTO`).
+- Una consulta sin texto ni emojis útiles (`"!!!"`) devuelve cero resultados.
 - Con `q` vacío no hay ranking: se devuelve el catálogo completo, ordenado
   primero por si el documento es del idioma dominante y luego por `nombre`
   alfabético, sin `score` (`null`). Así carga la página al abrirse.
@@ -378,9 +379,13 @@ Notas sobre el contrato:
 
 ```
 buscador-predictivo/
-├── app.py              # D, Q, F, R(qk,dj) + ajuste por idioma
-├── catalogo.json       # los 151 documentos (el "diccionario", aparte)
-├── requirements.txt    # única dependencia: Flask
+├── app.py              # rutas Flask (delgado)
+├── sri.py              # D, Q, F, R(qk,dj) + ajuste por idioma (sin Flask, sin I/O)
+├── emojis.py           # detectar, normalizar e interpretar emojis de la consulta
+├── repositorio.py      # fuente de datos: JSON o SQL + esquema de tablas
+├── migrar.py           # crea tablas e importa catalogo.json a SQL
+├── catalogo.json       # el catálogo original (fuente por defecto / semilla para SQL)
+├── requirements.txt    # Flask + SQLAlchemy
 ├── templates/
 │   └── index.html
 └── static/
@@ -392,14 +397,93 @@ buscador-predictivo/
 
 ```bash
 pip install -r requirements.txt
-python app.py
+python app.py                      # usa catalogo.json
 ```
+
+## Emojis en la consulta
+
+Se puede buscar con emojis solos (`🐙`), mezclados con texto (`polvo 🐙`) o
+pegados a él (`polvo🐙`). `emojis.extraer_emojis()` los separa del texto
+(entiende tonos de piel, secuencias ZWJ como `👨‍🏫`, banderas y keycaps) y el
+resto de la consulta sigue el pipeline de siempre. Cada emoji se entiende de
+tres formas:
+
+1. **Coincidencia directa.** Se compara con el campo `emoji` de los documentos
+   mediante un índice `emoji → doc_id`. Ignora selectores de variación y tonos
+   (`⚖` = `⚖️`, `👍🏽` = `👍`), y funciona entre idiomas: `📈` trae *Inversión*,
+   *Investment* e *Investimento*. Los documentos sin emoji no cuentan (el `📄`
+   de relleno no se indexa).
+2. **Significado curado.** `CONCEPTOS_EMOJI` (en `emojis.py`) liga emojis a
+   palabras ancla de `GRUPOS_SEMANTICOS`, y de ahí hereda sus equivalentes en
+   es/en/pt: `😭` (que el catálogo no usa) → `triste` → *Tristeza*, *Sadness*.
+3. **Nombre Unicode**, solo si el catálogo no usa ese emoji: `🦄` → `unicorn`.
+
+Con coincidencia directa, el score deja de ser solo el coseno:
+
+$$\mathrm{base} = (1-W)\cdot\mathrm{coseno} + W\cdot m, \qquad
+W = \begin{cases} 0.85 & \text{solo emojis} \\ 0.50 & \text{emojis + texto} \end{cases}$$
+
+donde $m = 1$ si el emoji del documento coincide. Sin emojis, $W = 0$ y el
+ranking es exactamente el de antes.
+
+**El emoji gana al selector de idioma.** Un documento que coincide con el emoji
+recibe `FACTOR_IDIOMA_CON_EMOJI = 0.85` en lugar de `0.35` (el dominante sigue
+con `1.10`). Así el emoji desempata a los falsos amigos aunque el selector diga
+otra cosa:
+
+```
+q = "polvo"    modo 🇲🇽 es  ->  Polvo (es) 0.99   Polvo (pt) 0.33
+q = "polvo 🐙" modo 🇲🇽 es  ->  Polvo (pt) 0.82   Pulpo (es) 0.55   Polvo (es) 0.50
+```
+
+Entre documentos que comparten emoji (`💃` lo usan 17) el orden de empate es
+alfabético por `nombre`. La respuesta de la API incluye `emojis`
+(`[{"emoji": "🐙", "coincidencias": 2}]`) y cada resultado un `emoji_coincide`.
+
+## Fuente de datos: JSON o SQL
+
+`sri.py` solo recibe un `RepositorioCatalogo` con un método, `listar()`, que
+devuelve dicts con `id, nombre, categoria, descripcion, emoji, idioma`. De
+dónde salgan es asunto de `repositorio.py`, y se elige con `DATABASE_URL`:
+
+| `DATABASE_URL` | Fuente |
+|---|---|
+| sin definir | `catalogo.json` |
+| `sqlite:///catalogo.db` | SQLite |
+| `postgresql://usuario:clave@host/base` | PostgreSQL (`pip install "psycopg[binary]"`) |
+| `mysql+pymysql://usuario:clave@host/base?charset=utf8mb4` | MySQL / MariaDB (`pip install pymysql`; `utf8mb4` es necesario por los emojis) |
+
+```bash
+python migrar.py                                   # crea tablas e importa a sqlite:///catalogo.db
+DATABASE_URL=sqlite:///catalogo.db python app.py
+```
+
+Esquema (en `repositorio.py`): `categorias(id, nombre UNIQUE)` y
+`documentos(id, nombre, descripcion, emoji, idioma, categoria_id → categorias)`.
+La categoría deja de ser texto repetido en cada fila; el motor la recibe ya
+resuelta a su nombre, así que el ranking es idéntico al de la versión JSON.
+`migrar.py` se niega a importar sobre una tabla con datos salvo `--reemplazar`.
+
+**Cambios en caliente.** El índice se construye al arrancar. Con
+`RECARGA_SEGUNDOS=300` se reconstruye solo cuando una consulta llega con más de
+5 minutos de antigüedad; si la base falla en ese momento se sigue sirviendo el
+índice anterior. Con `0` (por defecto) hay que reiniciar la app.
 
 Abrir `http://localhost:5000`, escribir `polvo` (o `pie`, `pan`, `rato`,
 `tuna`) y **cambiar de idioma con el selector** sin borrar el texto: el orden
 se invierte en el momento.
 
 ## Limitaciones conocidas
+
+- `CONCEPTOS_EMOJI` es curado a mano y corto a propósito: un emoji ambiguo
+  (`🦖` ¿"grande"?) mete más ruido que ayuda. Fuera de él, solo hay coincidencia
+  directa o el nombre Unicode (en inglés). No hay traducción de nombres de
+  emoji a es/pt (eso requeriría los datos CLDR).
+- El emoji compuesto que el catálogo no tenga idéntico no coincide por partes:
+  `👩‍🏫` no encuentra un documento con `👨‍🏫` (se interpreta por nombre).
+- Los empates exactos de score se ordenan por `nombre`; antes quedaban en el
+  orden interno de un `set`. Los scores no cambian, solo quién entra al corte
+  de 12 cuando hay más empatados.
 
 - El idioma dominante lo elige el usuario a mano. Un sistema real lo
   **detectaría** a partir de la consulta o lo aprendería del historial, en vez
@@ -423,8 +507,10 @@ se invierte en el momento.
   si se agregan palabras que dependan de la `ñ` para distinguirse.
 - El vocabulario y el índice (ver
   [Cómo se construye el índice](#cómo-se-construye-el-índice)) se calculan
-  una sola vez al arrancar. Si `catalogo.json` cambiara en caliente habría
-  que volver a llamar a `construir_indice()`.
+  al arrancar y, opcionalmente, cada `RECARGA_SEGUNDOS`
+  (ver [Fuente de datos](#fuente-de-datos-json-o-sql)). Reconstruirlo es
+  completo, no incremental; con catálogos de cientos de miles de filas habría
+  que pasar a actualizaciones parciales.
 - Los pesos de `CAMPOS` están puestos a mano. Con datos de uso reales
   (qué resultado terminó eligiendo la gente) se aprenderían, que es lo que
   hace cualquier buscador en producción.

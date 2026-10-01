@@ -15,6 +15,13 @@ import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
+from emojis import (
+    conceptos_curados,
+    extraer_emojis,
+    normalizar_emoji,
+    palabras_nombre,
+)
+
 log = logging.getLogger(__name__)
 
 # =============================================================================
@@ -55,6 +62,17 @@ FACTOR_SINONIMO = 0.70
 COBERTURA_MIN_CONCEPTO = 0.70
 # Consultas descriptivas largas también activan el modo sinopsis.
 MIN_TERMINOS_SINOPSIS = 3
+
+# Emojis en la consulta. Un documento cuyo `emoji` coincide con el escrito
+# recibe m = 1. Si hay coincidencia directa:
+#     base = (1 - W) * coseno_texto + W * m
+# W es mayor cuando el usuario solo escribió emojis (no hay texto que pesar).
+PESO_EMOJI_SOLO = 0.85
+PESO_EMOJI_CON_TEXTO = 0.50
+# El emoji es evidencia explícita: un documento que coincide con él no sufre
+# la penalización completa de idioma (si no, "pie 🥧" daría Pie (es) antes que
+# Pie (en) solo por el selector). Sigue por debajo del idioma dominante.
+FACTOR_IDIOMA_CON_EMOJI = 0.85
 
 
 # =============================================================================
@@ -173,13 +191,13 @@ class Indice:
     vocabulario: list
     vectores_por_modo: dict
     indice_invertido: dict
+    emoji_a_docs: dict  # clave de emoji normalizada -> [doc_id]
 
 
 def construir_indice(documentos):
-    catalogo = [
-        doc for doc in map(sanear, documentos)
-        if doc["nombre"] or doc["descripcion"]
-    ]
+    pares = [(crudo, sanear(crudo)) for crudo in documentos]
+    pares = [(c, d) for c, d in pares if d["nombre"] or d["descripcion"]]
+    catalogo = [d for _, d in pares]
     n = len(catalogo)
     tokens_por_doc = [
         {campo: tokenizar(doc[campo]) for campo, _ in CAMPOS}
@@ -225,17 +243,31 @@ def construir_indice(documentos):
             norma_total = math.sqrt(sum(p * p for p in vector.values()))
             vectores_por_modo[modo].append((dict(vector), norma_total))
 
-    return Indice(catalogo, idf, vocabulario, vectores_por_modo, dict(indice_invertido))
+    # Índice de emojis. Se lee del dato crudo: sanear() rellena 📄 en los
+    # documentos sin emoji y eso no debe contar como coincidencia.
+    emoji_a_docs = defaultdict(list)
+    for doc_id, (crudo, _) in enumerate(pares):
+        emojis_doc, _ = extraer_emojis(crudo.get("emoji") or "")
+        for clave in {normalizar_emoji(e) for e in emojis_doc}:
+            emoji_a_docs[clave].append(doc_id)
+
+    return Indice(
+        catalogo, idf, vocabulario, vectores_por_modo,
+        dict(indice_invertido), dict(emoji_a_docs),
+    )
 
 
 # =============================================================================
 # CONSULTAS
 # =============================================================================
-def interpretar_consulta(consulta):
+def interpretar_consulta(consulta, extra=()):
     """Simplifica la consulta: expande abreviaturas, quita relleno y decide
-    si conviene buscar en la sinopsis (descripción) además del nombre."""
+    si conviene buscar en la sinopsis (descripción) además del nombre.
+
+    `consulta` es el texto sin emojis; `extra` son términos (termino, exacto)
+    que vienen del significado de los emojis."""
     crudos = tokenizar(consulta)
-    if not crudos:
+    if not crudos and not extra:
         return None
 
     abreviaturas = {}
@@ -248,13 +280,13 @@ def interpretar_consulta(consulta):
             expandidos.append((token, False))
 
     contenido = [(t, e) for t, e in expandidos if t not in STOPWORDS]
-    if not contenido:
+    if not contenido and crudos:
         # Solo había relleno ("q", "es la"): búsqueda literal por prefijo.
         contenido = [(t, False) for t in crudos]
         abreviaturas = {}
 
     vistos, unicos = set(), []
-    for par in contenido:
+    for par in [*contenido, *extra]:
         if par not in vistos:
             vistos.add(par)
             unicos.append(par)
@@ -270,6 +302,7 @@ def interpretar_consulta(consulta):
         "simplificada": " ".join(t for t, _ in unicos),
         "abreviaturas": abreviaturas,
         "modo": "sinopsis" if usa_sinopsis else "nombre",
+        "tiene_texto": bool(crudos),
     }
 
 
@@ -309,7 +342,7 @@ def vector_consulta(terminos, idf, vocabulario):
     return vector, sorted(vector.keys()), norma_q
 
 
-def decorar(documento, score):
+def decorar(documento, score, emoji_coincide=False):
     idioma = documento["idioma"]
     return dict(
         documento,
@@ -317,6 +350,7 @@ def decorar(documento, score):
         idioma_nombre=NOMBRE_IDIOMA[idioma],
         bandera=BANDERA_IDIOMA[idioma],
         homografo=False,
+        emoji_coincide=emoji_coincide,
     )
 
 
@@ -395,6 +429,7 @@ class Buscador:
                 "consulta": "",
                 "consulta_simplificada": "",
                 "abreviaturas": {},
+                "emojis": [],
                 "modo": "nombre",
                 "idioma_dominante": dominante,
                 "terminos_expandidos": [],
@@ -402,18 +437,45 @@ class Buscador:
                 "resultados": [decorar(doc, None) for doc in resultados],
             }
 
-        interpretacion = interpretar_consulta(consulta)
-        vector_q, terminos_expandidos, norma_q = vector_consulta(
-            interpretacion["terminos"], indice.idf, indice.vocabulario
-        )
+        # 1) Separar los emojis del texto y entender cada uno.
+        emojis, texto = extraer_emojis(consulta)
+        claves, vistas = [], set()
+        for emoji in emojis:
+            clave = normalizar_emoji(emoji)
+            if clave not in vistas:
+                vistas.add(clave)
+                claves.append((emoji, clave))
+
+        coinciden = {}   # doc_id -> m (coincidencia directa de emoji)
+        extra = []       # términos que aporta el significado del emoji
+        resumen_emojis = []
+        for emoji, clave in claves:
+            directos = indice.emoji_a_docs.get(clave, [])
+            resumen_emojis.append({"emoji": emoji, "coincidencias": len(directos)})
+            for doc_id in directos:
+                coinciden[doc_id] = 1.0
+            extra.extend((p, False) for p in conceptos_curados(clave))
+            if not directos:
+                # Emoji que el catálogo no usa: se interpreta por su nombre.
+                extra.extend((p, False) for p in palabras_nombre(emoji))
+
+        # 2) Texto + significado de emojis -> vector de consulta.
+        interpretacion = interpretar_consulta(texto, extra)
         base = {
             "consulta": consulta,
-            "consulta_simplificada": interpretacion["simplificada"],
-            "abreviaturas": interpretacion["abreviaturas"],
-            "modo": interpretacion["modo"],
+            "consulta_simplificada": (
+                interpretacion["simplificada"] if interpretacion else ""
+            ),
+            "abreviaturas": interpretacion["abreviaturas"] if interpretacion else {},
+            "emojis": resumen_emojis,
+            "modo": interpretacion["modo"] if interpretacion else "nombre",
             "idioma_dominante": dominante,
         }
-        if not vector_q or norma_q == 0.0:
+        vector_q, terminos_expandidos, norma_q = (
+            vector_consulta(interpretacion["terminos"], indice.idf, indice.vocabulario)
+            if interpretacion else ({}, [], 0.0)
+        )
+        if not vector_q and not coinciden:
             return {
                 **base,
                 "terminos_expandidos": [],
@@ -421,9 +483,14 @@ class Buscador:
                 "resultados": [],
             }
 
-        vectores = indice.vectores_por_modo[interpretacion["modo"]]
+        vectores = indice.vectores_por_modo[base["modo"]]
+        tiene_texto = bool(interpretacion and interpretacion["tiene_texto"])
+        if not coinciden:
+            peso_emoji = 0.0
+        else:
+            peso_emoji = PESO_EMOJI_CON_TEXTO if tiene_texto else PESO_EMOJI_SOLO
 
-        candidatos_ids = set()
+        candidatos_ids = set(coinciden)
         for termino in terminos_expandidos:
             candidatos_ids.update(indice.indice_invertido.get(termino, []))
 
@@ -431,32 +498,43 @@ class Buscador:
         for doc_id in candidatos_ids:
             doc = indice.catalogo[doc_id]
             vector_doc, norma_doc = vectores[doc_id]
+            m = coinciden.get(doc_id, 0.0)
 
-            if norma_doc == 0:
+            if norma_doc == 0 and not m:
                 continue
 
             # Similitud coseno estrictamente de TÉRMINOS
-            producto_punto = sum(
-                peso_q * vector_doc.get(termino, 0.0)
-                for termino, peso_q in vector_q.items()
-            )
-            coseno_texto = producto_punto / (norma_q * norma_doc)
+            coseno_texto = 0.0
+            if vector_q and norma_doc:
+                producto_punto = sum(
+                    peso_q * vector_doc.get(termino, 0.0)
+                    for termino, peso_q in vector_q.items()
+                )
+                coseno_texto = producto_punto / (norma_q * norma_doc)
+
+            # Sin emoji coincidente peso_emoji = 0 y esto es el coseno de siempre.
+            base_score = (1 - peso_emoji) * coseno_texto + peso_emoji * m
 
             # Factor de ajuste según coincidencia de idioma
             if doc["idioma"] == dominante:
                 factor_idioma = BOOST_IDIOMA_DOMINANTE
+            elif m:
+                factor_idioma = FACTOR_IDIOMA_CON_EMOJI
             else:
                 factor_idioma = FACTOR_IDIOMA_SECUNDARIO
 
-            score_final = coseno_texto * factor_idioma
+            score_final = base_score * factor_idioma
 
             if score_final > 0:
-                puntuados.append((score_final, doc))
+                puntuados.append((score_final, doc, bool(m)))
 
-        puntuados.sort(key=lambda x: x[0], reverse=True)
+        # Desempate por nombre: un emoji compartido por 17 documentos da
+        # muchos scores casi idénticos y el orden no debe depender del azar.
+        puntuados.sort(key=lambda x: (-x[0], x[1]["nombre"]))
 
         resultados = [
-            decorar(doc, score) for score, doc in puntuados[:LIMITE_SUGERENCIAS]
+            decorar(doc, score, coincide)
+            for score, doc, coincide in puntuados[:LIMITE_SUGERENCIAS]
         ]
         marcar_homografos(resultados)
 
