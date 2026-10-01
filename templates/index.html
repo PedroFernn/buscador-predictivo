@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador Predictivo Multilenguaje — SRI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <main class="contenedor">
+        <h1>🔮 Buscador Predictivo</h1>
+        <p class="subtitulo">
+            SRI vectorial TF-IDF sobre {{ total }} documentos<br>
+            <span class="desglose" id="desglose"></span>
+        </p>
+
+        <!-- Selector del idioma dominante. Al cambiarlo se invierte el prior:
+             lo que hundía a una palabra extranjera pasa a favorecerla. -->
+        <div class="selector-idioma" role="group" aria-label="Idioma dominante">
+            {% for idioma in idiomas %}
+            <button
+                type="button"
+                class="opcion-idioma{% if idioma.codigo == idioma_defecto %} activa{% endif %}"
+                data-idioma="{{ idioma.codigo }}"
+                title="{{ idioma.total }} documentos en {{ idioma.nombre.lower() }}"
+            >{{ idioma.bandera }} {{ idioma.nombre }}</button>
+            {% endfor %}
+        </div>
+
+        <input
+            type="text"
+            id="buscador"
+            placeholder="Prueba: 'polvo', 'pie', 'fruta tropical'..."
+            autocomplete="off"
+            autofocus
+        >
+
+        <!-- Términos a los que el sistema expandió la consulta (transparencia del modelo) -->
+        <div id="prediccion" class="prediccion"></div>
+
+        <p id="contador" class="contador"></p>
+
+        <ul id="resultados" class="resultados"></ul>
+    </main>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
