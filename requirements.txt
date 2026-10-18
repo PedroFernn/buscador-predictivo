@@ -1,0 +1,5 @@
+Flask>=2.0
+SQLAlchemy>=1.4
+# gunicorn          # producción: gunicorn -w 4 "app:create_app()"
+# psycopg[binary]   # solo si DATABASE_URL apunta a PostgreSQL
+# pymysql           # solo si DATABASE_URL apunta a MySQL/MariaDB

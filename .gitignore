@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+senales.db
+senales.db-wal
+senales.db-shm
+catalogo.db

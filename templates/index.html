@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador Predictivo Multilenguaje — SRI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <main class="contenedor">
+        <h1>🔮 Buscador Predictivo</h1>
+        <p class="subtitulo">
+            SRI vectorial TF-IDF sobre {{ total }} documentos<br>
+            <span class="desglose" id="desglose"></span>
+        </p>
+
+        <!-- Selector del idioma dominante. Al cambiarlo se invierte el prior:
+             lo que hundía a una palabra extranjera pasa a favorecerla. -->
+        <div class="selector-idioma" role="group" aria-label="Idioma dominante">
+            {% for idioma in idiomas %}
+            <button
+                type="button"
+                class="opcion-idioma{% if idioma.codigo == idioma_defecto %} activa{% endif %}"
+                data-idioma="{{ idioma.codigo }}"
+                title="{{ idioma.total }} documentos en {{ idioma.nombre.lower() }}"
+            >{{ idioma.bandera }} {{ idioma.nombre }}</button>
+            {% endfor %}
+        </div>
+
+        <input
+            type="text"
+            id="buscador"
+            placeholder="Prueba: 'polvo', 'fruta tropical', '🐙', '😢'..."
+            autocomplete="off"
+            autofocus
+        >
+
+        <!-- Términos a los que el sistema expandió la consulta (transparencia del modelo) -->
+        <div id="prediccion" class="prediccion"></div>
+
+        <!-- Sugerencias ordenadas por frecuencia real de consulta (GET /api/sugerencias).
+             Sin texto: las más buscadas; escribiendo: las más buscadas con ese prefijo. -->
+        <section id="sugerencias" class="sugerencias" aria-label="Sugerencias por frecuencia" hidden>
+            <div class="sugerencias-cabecera">
+                <span class="etiqueta" id="titulo-sugerencias"></span>
+            </div>
+            <ul id="lista-sugerencias" class="lista-sugerencias"></ul>
+        </section>
+
+        <!-- Historial de búsquedas (se guarda en el navegador, ver static/js/historial.js) -->
+        <section id="historial" class="historial" aria-label="Historial de búsquedas" hidden>
+            <div class="historial-cabecera">
+                <span class="etiqueta">🕘 Historial</span>
+                <button type="button" id="borrar-historial" class="borrar-historial">Borrar todo</button>
+            </div>
+            <ul id="lista-historial" class="lista-historial"></ul>
+        </section>
+
+        <!-- Sugerencias personales: salen de tu historial y tus reacciones (ver static/js/perfil.js
+             y POST /api/recomendaciones). Vacío al inicio; se llena con el uso. -->
+        <section id="recomendaciones" class="recomendaciones" aria-label="Sugerencias para ti" data-vacio="1">
+            <div class="recomendaciones-cabecera">
+                <span class="etiqueta">✨ Sugerencias para ti</span>
+                <button type="button" id="olvidar-reacciones" class="borrar-historial"
+                        title="Borra las reacciones guardadas en este navegador (el historial se borra aparte)" hidden>Olvidar reacciones</button>
+            </div>
+            <ul id="lista-recomendaciones" class="lista-recomendaciones"></ul>
+            <p id="vacio-recomendaciones" class="vacio-recomendaciones"></p>
+        </section>
+
+        <p id="contador" class="contador"></p>
+
+        <ul id="resultados" class="resultados"></ul>
+    </main>
+
+    <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
+
+
