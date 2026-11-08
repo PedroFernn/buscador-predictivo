@@ -429,6 +429,52 @@ svg.grafica {
     from { opacity: 0; }
 }
 
+/* --- Árbol B con claves (demostración) --- */
+.g-nodo-clave {
+    fill: var(--indigo-50);
+    stroke: var(--primario);
+    stroke-width: 1.2;
+}
+
+.g-nodo-clave.descenso {
+    fill: #fdba74;
+    stroke: var(--acento);
+}
+
+.g-nodo-clave.barrido {
+    fill: #ddd6fe;
+    stroke: var(--barrido);
+}
+
+.g-clave {
+    font-size: 11px;
+    font-weight: 600;
+    fill: var(--texto);
+    pointer-events: none;
+}
+
+.g-clave.descenso {
+    fill: #7c2d12;
+}
+
+.g-clave.barrido {
+    fill: #4c1d95;
+}
+
+.g-arista {
+    stroke: var(--texto-leve);
+    stroke-width: 1.2;
+}
+
+/* Series de la comparación de retención */
+.g-trazo.ajuste-2 {
+    stroke: #be185d;
+}
+
+.g-punto.ajuste-2 {
+    fill: #be185d;
+}
+
 /* --- Árbol B --- */
 .g-nodo {
     fill: var(--primario);
@@ -581,3 +627,4 @@ svg.grafica {
         animation: none;
     }
 }
+

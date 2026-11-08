@@ -32,7 +32,8 @@ class Indice:
     normas: dict        # modo -> [norma del vector por posición]
     vectores: dict      # modo -> [{término: peso}] por posición (perfil de gustos, ver recomendador.py)
     emoji_a_docs: dict  # clave de emoji normalizada -> [posicion]
-    categorias: ArbolB  # árbol B de categorías, cada una con su propio árbol de documentos (ver categorias.py)
+    categorias: ArbolB  # árbol B de categorías por nombre, cada una con su propio árbol de documentos (ver categorias.py)
+    mapa: ArbolB        # las mismas categorías con la llave forzada NN_categoria: orden por cercanía (ver categorias.py)
 
 
 def sanear(documento):
@@ -108,6 +109,7 @@ def construir_indice(documentos):
         for clave in {normalizar_emoji(e) for e in emojis_doc}:
             emoji_a_docs[clave].append(posicion)
 
+    por_nombre, mapa = C.construir(catalogo, vectores[C.MODO], normas[C.MODO])
     return Indice(
         catalogo=catalogo,
         ids=frozenset(d["id"] for d in catalogo if "id" in d),
@@ -118,7 +120,9 @@ def construir_indice(documentos):
         normas=normas,
         vectores=vectores,
         emoji_a_docs=dict(emoji_a_docs),
-        categorias=C.construir(catalogo, vectores[C.MODO], normas[C.MODO]),
+        categorias=por_nombre,
+        mapa=mapa,
     )
+
 
 

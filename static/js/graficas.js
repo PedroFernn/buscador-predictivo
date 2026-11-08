@@ -302,3 +302,47 @@ export function arbolPorNiveles(contenedor, niveles, traza, opc = {}) {
     svg += `<text class="g-titulo-eje" x="${etiqueta + util / 2}" y="${alto - 6}" text-anchor="middle">← orden alfabético del vocabulario →</text>`;
     contenedor.innerHTML = `${svg}</svg>`;
 }
+
+// --- Árbol B con sus claves (modo demostración) -----------------------------------------------------
+// niveles: [[{ claves: [...], hijos: [ordinal en el nivel siguiente] }]], la raíz primero.
+// Cada nodo es una caja con sus claves; las aristas unen cada padre con sus hijos. Con grado 2 o 3
+// caben todos los nodos y se puede ver el orden alfabético de un nivel a otro.
+export function arbolConClaves(contenedor, niveles, traza, opc = {}) {
+    if (!niveles.length) return vacio(contenedor, "El árbol está vacío.");
+    const altoNodo = 38;
+    const hueco = 36;
+    const margen = 8;
+    const alto = niveles.length * (altoNodo + hueco) - hueco + 2 * margen;
+    const y = (i) => margen + i * (altoNodo + hueco);
+    const marcas = new Map();
+    if (traza) {
+        for (const [n, o] of traza.barrido) marcas.set(`${n}:${o}`, "barrido");
+        for (const [n, o] of traza.descenso) marcas.set(`${n}:${o}`, "descenso");
+    }
+    const geo = niveles.map((nivel) => {
+        const slot = (ANCHO - 2 * margen) / nivel.length;
+        return nivel.map((_, j) => ({ x: margen + j * slot + 3, w: slot - 6 }));
+    });
+    const centro = (i, j) => geo[i][j].x + geo[i][j].w / 2;
+
+    let svg = `<svg class="grafica" viewBox="0 0 ${ANCHO} ${alto}" role="img" aria-label="${esc(opc.aria || "Árbol B con sus claves")}">`;
+    niveles.forEach((nivel, i) => {
+        nivel.forEach((nodo, j) => {
+            for (const c of nodo.hijos) {
+                svg += `<line class="g-arista" x1="${centro(i, j).toFixed(1)}" y1="${y(i) + altoNodo}" x2="${centro(i + 1, c).toFixed(1)}" y2="${y(i + 1)}"/>`;
+            }
+        });
+    });
+    niveles.forEach((nivel, i) => {
+        nivel.forEach((nodo, j) => {
+            const g = geo[i][j];
+            const marca = marcas.get(`${i}:${j}`);
+            const texto = nodo.claves.join(" · ");
+            const tip = `${nodo.claves.length} ${nodo.claves.length === 1 ? "clave" : "claves"}: ${texto}`;
+            svg += `<rect class="g-nodo-clave${marca ? ` ${marca}` : ""}" x="${g.x.toFixed(1)}" y="${y(i)}" width="${g.w.toFixed(1)}" height="${altoNodo}" rx="6" data-tip="${esc(tip)}"/>`
+                + `<text class="g-clave${marca ? ` ${marca}` : ""}" x="${centro(i, j).toFixed(1)}" y="${(y(i) + altoNodo / 2 + 4).toFixed(1)}" text-anchor="middle">${esc(recortar(texto, Math.max(4, Math.floor(g.w / 6.4))))}</text>`;
+        });
+    });
+    contenedor.innerHTML = `${svg}</svg>`;
+}
+

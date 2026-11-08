@@ -15,34 +15,12 @@ import time
 from collections import Counter
 
 from nucleo.estadistica import ajuste_loglog, ajuste_zipf
+from senales.retencion import PURGA_CADA, consulta, puntos_de_control
 from senales.almacen import AlmacenEventos
 from senales.consultas import HistorialConsultas
 from senales.moderacion import Moderador
 
-S_PALABRAS = 1.3   # exponente Zipf del vocabulario (soporte infinito: Heaps no satura)
-PURGA_CADA = 10_000
-
-
-def zeta(s, rng):
-    """Muestra de una distribución zeta (Zipf sin tope), algoritmo de Devroye."""
-    b = 2 ** (s - 1)
-    while True:
-        u = 1.0 - rng.random()
-        v = rng.random()
-        x = min(int(u ** (-1.0 / (s - 1))), 10**9)
-        t = (1.0 + 1.0 / x) ** (s - 1)
-        if v * x * (t - 1.0) / (b - 1.0) <= t / b:
-            return x
-
-
-def consulta(rng):
-    n = 1 if rng.random() < 0.55 else 2
-    return " ".join(f"t{zeta(S_PALABRAS, rng)}" for _ in range(n))
-
-
-def puntos_de_control(n):
-    base = [1_000, 3_000, 10_000, 30_000, 100_000, 300_000, 1_000_000]
-    return [p for p in base if p <= n] + ([n] if n not in base else [])
+# Flujo sintético y su generador: senales/retencion.py (compartido con la página /analitica)
 
 
 def main():
@@ -135,3 +113,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

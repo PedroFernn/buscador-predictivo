@@ -16,9 +16,11 @@ from busqueda import categorias as C
 from busqueda import parametros as P
 from busqueda import ranking
 from busqueda.consulta import analizar
+from nucleo.arbol_b import ArbolB
 from nucleo.estadistica import ajuste_potencia, curva_heaps, rango_frecuencia
 from nucleo.lexico import tokenizar_contenido
 
+MAPA_MAX_FILAS = 40      # categorías que se listan en el mapa relacional
 MAX_CELDAS = 160       # un nivel del árbol se dibuja con a lo más este número de celdas
 ZIPF_MAX_RANGOS = 1000  # el ajuste de Zipf usa los primeros rangos (igual que nucleo.estadistica.ajuste_zipf)
 HEAPS_N_MIN = 10        # el arranque de la curva de Heaps (pocos tokens) no se ajusta si hay de sobra
@@ -164,6 +166,7 @@ class Analitica:
             },
             "postings": {modo: self._bosque_de_postings(modo) for modo in P.CAMPOS_POR_MODO},
             "categorias": self._bosque_de_categorias(),
+            "mapa": self._mapa_relacional(),
         }
 
     def _bosque_de_postings(self, modo):
@@ -183,6 +186,25 @@ class Analitica:
             "una_hoja": alturas.get(1, 0),
         }
 
+    def _mapa_relacional(self):
+        """Las categorías en el orden de sus llaves NN_categoria y cuánto se parece cada una a la que sigue."""
+        mapa = self.indice.mapa
+        categorias = [c for _, c in mapa.items()]
+        filas = [
+            {"llave": c.llave, "nombre": c.nombre, "documentos": len(c.docs), "enlace": round(c.eslabones[1], 3)}
+            for c in categorias
+        ]
+        cortes = sum(1 for c in categorias[:-1] if c.eslabones[1] < P.CATEGORIA_SIM_MIN)
+        conservada = C.preservacion([c.clave for c in categorias], {c.clave: c.vecinas for c in categorias})
+        return {
+            "categorias": len(filas),
+            "bloques": (cortes + 1) if filas else 0,
+            "preservacion": _redondear(conservada),
+            "sim_min": P.CATEGORIA_SIM_MIN,
+            "filas": filas[:MAPA_MAX_FILAS],
+            "recortado": len(filas) > MAPA_MAX_FILAS,
+        }
+
     def _bosque_de_categorias(self):
         """El árbol de categorías y, dentro de cada una, su propio árbol de documentos."""
         arbol = self.indice.categorias
@@ -194,6 +216,33 @@ class Analitica:
             "documentos": sum(f[1] for f in filas),
             "top": [{"nombre": nombre, "documentos": n, "altura": h} for nombre, n, h in filas[:12]],
             "alturas": sorted({f[2] for f in filas}),
+        }
+
+    def arbol_demo(self, grado=2, n=22, consulta=""):
+        """Un árbol B pequeño con sus claves visibles. Toma n términos repartidos en el alfabeto entre
+        los más frecuentes (así son palabras reconocibles) y, si la consulta tiene un prefijo, su recorrido."""
+        candidatos = sorted(t for t, _ in self._ranking[: max(60, 3 * n)])
+        if len(candidatos) > n:
+            paso = len(candidatos) / n
+            muestra = sorted({candidatos[int(i * paso)] for i in range(n)})
+        else:
+            muestra = candidatos
+        arbol = ArbolB(grado)
+        for termino in muestra:
+            arbol.insertar(termino, self.indice.idf.get(termino, 0.0))
+        tokens = tokenizar_contenido(consulta) if consulta else []
+        prefijo = tokens[-1] if tokens else None
+        traza = None
+        if prefijo:
+            descenso, barrido = arbol.traza(prefijo)
+            traza = {"descenso": [list(x) for x in descenso], "barrido": [list(x) for x in barrido]}
+        return {
+            "grado": grado,
+            "claves": len(muestra),
+            "altura": arbol.altura,
+            "niveles": arbol.estructura(),
+            "prefijo": prefijo,
+            "traza": traza,
         }
 
     # --- lo que toca una consulta concreta ----------------------------------------
@@ -231,7 +280,7 @@ class Analitica:
             "candidatos": len(productos),
             "vocabulario": self._sondeo_vocabulario(analisis),
             "categorias": [
-                {"nombre": c.nombre, "documentos": len(c.docs), "altura": c.docs.altura}
+                {"nombre": c.nombre, "documentos": len(c.docs), "altura": c.docs.altura, "llave": c.llave}
                 for c in C.nombradas_por(indice.categorias, consulta)
             ],
         }
@@ -254,5 +303,6 @@ class Analitica:
             "nodos_total": vocabulario.estadisticas()["nodos"],
             "terminos_total": len(vocabulario),
         }
+
 
 

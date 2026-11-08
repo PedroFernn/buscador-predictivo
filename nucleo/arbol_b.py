@@ -91,6 +91,37 @@ class ArbolB:
         """(clave, valor) en orden con desde <= clave < hasta (sirve con tuplas)."""
         return self._recorrer(desde, lambda clave: clave < hasta)
 
+    def siguientes(self, clave):
+        """(clave, valor) en orden ascendente de las claves estrictamente mayores que `clave`.
+
+        Perezoso: sirve para seguir caminando desde donde termina un bloque de llaves."""
+        for k, valor in self._recorrer(clave, lambda _: True):
+            if k > clave:
+                yield k, valor
+
+    def anteriores(self, clave):
+        """(clave, valor) en orden descendente de las claves estrictamente menores que `clave`.
+
+        Perezoso, como siguientes(): recorre el árbol hacia atrás sin cargarlo entero."""
+        def inverso(nodo):
+            for j in range(len(nodo.claves) - 1, -1, -1):
+                if not nodo.hoja:
+                    yield from inverso(nodo.hijos[j + 1])
+                yield nodo.claves[j], nodo.valores[j]
+            if not nodo.hoja:
+                yield from inverso(nodo.hijos[0])
+
+        def visitar(nodo):
+            i = bisect_left(nodo.claves, clave)  # claves[:i] son menores que `clave`
+            if not nodo.hoja:
+                yield from visitar(nodo.hijos[i])
+            for j in range(i - 1, -1, -1):
+                yield nodo.claves[j], nodo.valores[j]
+                if not nodo.hoja:
+                    yield from inverso(nodo.hijos[j])
+
+        yield from visitar(self.raiz)
+
     def _recorrer(self, desde, dentro, visitados=None):
         """Recorrido en orden desde la primera clave >= `desde` (None: desde el inicio),
         mientras `dentro(clave)` sea verdadero. Visita solo las ramas que hacen falta."""
@@ -130,6 +161,20 @@ class ArbolB:
         while actual:
             niveles.append([len(nodo.claves) for nodo in actual])
             actual = [hijo for nodo in actual for hijo in nodo.hijos]
+        return niveles
+
+    def estructura(self):
+        """Por nivel, los nodos (raíz primero) con sus claves y, por cada hijo, su ordinal en el nivel
+        siguiente. Lo usa la demostración de la página para dibujar aristas y claves."""
+        niveles, actual = [], [self.raiz]
+        while actual:
+            siguientes = [h for nodo in actual for h in nodo.hijos]
+            pos = {id(h): k for k, h in enumerate(siguientes)}
+            niveles.append([
+                {"claves": list(nodo.claves), "hijos": [pos[id(h)] for h in nodo.hijos]}
+                for nodo in actual
+            ])
+            actual = siguientes
         return niveles
 
     def estadisticas(self):
@@ -241,4 +286,5 @@ class ArbolB:
         revisar(self.raiz, None, None, 1, True)
         assert len(profundidades) == 1, "las hojas no están a la misma profundidad"
         assert total == self._n
+
 

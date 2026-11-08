@@ -5,7 +5,7 @@
 // Este módulo solo cablea datos con gráficas; el dibujo vive en graficas.js.
 import * as Api from "./api.js";
 import {
-    activarTooltips, arbolPorNiveles, barrasHorizontales, barrasVerticales, dispersion, dominiosDe, esc, num, vacio,
+    activarTooltips, arbolConClaves, arbolPorNiveles, barrasHorizontales, barrasVerticales, dispersion, dominiosDe, esc, num, vacio,
 } from "./graficas.js";
 
 const REFRESCO_USO_MS = 4000;
@@ -17,7 +17,11 @@ const MAX_ETIQUETADOS = 3;      // de esos, los que llevan nombre al lado
 
 const $ = (id) => document.getElementById(id);
 
+// Datos que vienen de endpoints propios (no del catálogo ni del uso en vivo)
+const extra = { cache: null, retencion: null, demo: null };
+
 const estado = {
+    arbolModo: "vocabulario",   // "vocabulario" | "demo"
     corpus: null,
     uso: null,
     sondeo: null,
@@ -135,6 +139,83 @@ function pintarPostingsDeLaConsulta() {
 }
 
 // --- 2 · Zipf ---------------------------------------------------------------------------------------------
+// Qué fracción de las peticiones de sugerencias sale del cache, por rango del prefijo
+function pintarCache() {
+    const c = extra.cache;
+    if (!c) return;
+    chips($("chips-cache"), [
+        ["Peticiones de sugerencias", num(c.peticiones)],
+        ["Servidas desde el cache", c.tasa === null ? "—" : `${porcentaje(c.tasa, 1)} %`, "Aciertos / peticiones, en toda la medición"],
+        ["Prefijos distintos pedidos", num(c.prefijos)],
+        ["Prefijos guardados ahora", num(c.en_cache), "Entradas vivas en el cache (TTL 30 s, máximo 2 048)"],
+    ]);
+    if (!c.puntos.length) {
+        vacio($("graf-cache"), "Todavía no hay peticiones de sugerencias: escribe en el buscador para llenar esta gráfica.");
+        $("nota-cache").textContent = "";
+        return;
+    }
+    dispersion($("graf-cache"), {
+        logX: true, logY: false, domY: [0, 1],
+        etiquetaX: "rango del prefijo (1 = el más pedido)", etiquetaY: "fracción servida desde el cache",
+        aria: "Tasa de aciertos del cache frente al rango del prefijo",
+        series: [{
+            nombre: "Prefijos pedidos", clase: "serie-2", puntos: c.puntos.map((p) => [p.rango, p.tasa]),
+            tip: (r, t) => {
+                const punto = c.puntos[r - 1];
+                return `«${punto.prefijo}» · rango ${num(r)} · ${num(punto.peticiones)} peticiones · ${porcentaje(t, 1)} % desde cache`;
+            },
+        }],
+    });
+    $("nota-cache").textContent = "Cada consulta nueva vacía el cache, así que la tasa baja cuando entran muchas escrituras entre peticiones. "
+        + "Los prefijos populares (rangos bajos) son los que más se benefician.";
+}
+
+// Sin política frente a la ventana: simulación con la misma ley, por eso no depende del tráfico real
+function pintarRetencion() {
+    const r = extra.retencion;
+    if (!r) return vacio($("graf-retencion"), "Calculando la comparación…");
+    const pts = r.puntos;
+    dispersion($("graf-retencion"), {
+        logX: true, logY: true, leyenda: "abajo",
+        etiquetaX: "eventos simulados (n)", etiquetaY: "filas, consultas o términos",
+        aria: "Consultas y términos distintos sin política frente a las filas con ventana",
+        series: [
+            { nombre: "Sin política: consultas distintas", clase: "serie-1", linea: true, puntos: pts.map((p) => [p.n, p.consultas]), tip: (n, v) => `${num(n)} eventos → ${num(v)} consultas distintas sin política` },
+            { nombre: "Sin política: términos distintos", clase: "ajuste-2", linea: true, puntos: pts.map((p) => [p.n, p.terminos]), tip: (n, v) => `${num(n)} eventos → ${num(v)} términos distintos sin política` },
+            { nombre: `Tabla con ventana de ${num(r.ventana_segundos / 3600, 0)} h (filas)`, clase: "serie-2", linea: true, puntos: pts.map((p) => [p.n, p.filas]), tip: (n, v) => `${num(n)} eventos → ${num(v)} filas en la tabla con ventana` },
+        ],
+    });
+    const ultimo = pts[pts.length - 1];
+    chips($("chips-retencion"), [
+        ["Filas con ventana al final", num(ultimo.filas), `Se aplana: la purga conserva solo la ventana de ${num(r.ventana_segundos)} s`],
+        ["Consultas distintas sin política", num(ultimo.consultas), "Crecen sin tope: cada consulta nueva se suma"],
+        ["Eventos simulados", num(r.eventos)],
+        ["β de consultas", r.heaps_consultas ? String(r.heaps_consultas.beta) : "—"],
+    ]);
+    $("nota-retencion").textContent = `Simulación con la misma ley Zipf que scripts/simular.py (tardó ${num(r.segundos, 1)} s). `
+        + "El tráfico real no tiene historia sin política que medir, así que la comparación se hace con el flujo sintético.";
+}
+
+async function cargarRetencion() {
+    try {
+        extra.retencion = await Api.analiticaRetencion();
+        pintarRetencion();
+    } catch (error) {
+        vacio($("graf-retencion"), "No se pudo calcular la comparación.");
+    }
+}
+
+async function cargarCache() {
+    try {
+        const nuevo = await Api.analiticaCache();
+        if (JSON.stringify(nuevo) === JSON.stringify(extra.cache)) return;
+        extra.cache = nuevo;
+        pintarCache();
+    } catch (error) {
+        // se queda lo último que se pintó; el aviso general lo da el reloj en vivo
+    }
+}
+
 function pintarZipf(animar = false) {
     const { fuente, escala } = estado.zipf;
     const logaritmica = escala === "log";
@@ -145,6 +226,9 @@ function pintarZipf(animar = false) {
         const z = estado.corpus && estado.corpus.zipf;
         if (!z) return;
         const a = z.ajuste;
+        $("nota-zipf").textContent = `La recta solo se dibuja donde se ajustó (rangos 1 a ${num(z.ajuste_hasta_rango)}). `
+            + "La meseta de abajo son términos que aparecen una sola vez: no se ajustan. "
+            + "Los textos del catálogo son cortos y sin palabras de relleno: su exponente no tiene por qué parecerse al de un texto corrido.";
         const resaltados = ((estado.sondeo && estado.sondeo.terminos) || [])
             .filter((t) => t.rango && t.frecuencia)
             .slice(0, MAX_RESALTADOS)
@@ -158,7 +242,7 @@ function pintarZipf(animar = false) {
             series: [{ nombre: "Términos del catálogo", puntos: z.puntos, tip: (r, f) => `rango ${num(r)} · ${num(f)} apariciones` }],
             ajustes: a ? [{
                 nombre: `ajuste: f ≈ ${num(a.constante, 0)} / r^${a.exponente}`, clase: "ajuste-1",
-                f: (r) => a.constante * r ** -a.exponente, x0: 1, x1: z.terminos,
+                f: (r) => a.constante * r ** -a.exponente, x0: 1, x1: z.ajuste_hasta_rango,
             }] : [],
             resaltados,
         });
@@ -175,6 +259,7 @@ function pintarZipf(animar = false) {
 
     const u = estado.uso;
     if (!u) return;
+    $("nota-zipf").textContent = "Con pocas consultas la recta no es fiable: el ajuste necesita al menos 10 consultas distintas.";
     if (!u.zipf.puntos.length) {
         vacio(grafica, "Todavía no hay consultas registradas: busca algo en el buscador (o genera datos en «Herramientas de prueba»).");
     } else {
@@ -185,7 +270,7 @@ function pintarZipf(animar = false) {
             series: [{ nombre: "Consultas distintas", clase: "serie-2", puntos: u.zipf.puntos, tip: (r, f) => `rango ${num(r)} · buscada ${num(f)} veces` }],
             ajustes: a ? [{
                 nombre: `ajuste: f ≈ ${num(a.constante, 1)} / r^${a.exponente}`, clase: "ajuste-1",
-                f: (r) => a.constante * r ** -a.exponente, x0: 1, x1: u.distintas,
+                f: (r) => a.constante * r ** -a.exponente, x0: 1, x1: a.puntos,
             }] : [],
         });
     }
@@ -273,7 +358,7 @@ function pintarHeaps(animar = false) {
     }
     dispersion(grafica, { ...datos.cfg, animar });
     chips($("chips-heaps"), datos.chips);
-    $("nota-heaps").textContent = datos.nota;
+    $("nota-heaps").textContent = `${datos.nota} Los textos del catálogo son cortos y sin relleno: no compares β con los de texto corrido.`;
 }
 
 function detenerReproduccion() {
@@ -314,6 +399,52 @@ function reproducirHeaps() {
 }
 
 // --- 4 · Árboles B --------------------------------------------------------------------------------------------
+// Las categorías en el orden de sus llaves forzadas NN_categoria: el valor es la similitud con la llave que sigue
+function pintarMapa(nombradas) {
+    const m = estado.corpus && estado.corpus.arboles.mapa;
+    if (!m) return;
+    barrasHorizontales($("graf-mapa"), m.filas.map((f) => ({
+        etiqueta: f.llave,
+        valor: Math.round(f.enlace * 100),
+        resaltado: nombradas.has(f.nombre),
+        tip: f.enlace >= m.sim_min
+            ? `${f.llave} (${num(f.documentos)} documentos): se parece ${num(f.enlace * 100, 0)} % a la llave que sigue`
+            : `${f.llave} (${num(f.documentos)} documentos): corte, la llave que sigue ya no se le parece`,
+    })), { formato: (v) => `${num(v)} %`, ancho_etiqueta: 200, aria: "Categorías en el orden de sus llaves y similitud con la siguiente", vacio: "No hay categorías." });
+    const conserva = m.preservacion === null ? "no aplica" : `${porcentaje(m.preservacion, 1)} %`;
+    $("nota-mapa").textContent = `${num(m.categorias)} categorías en ${num(m.bloques)} ${m.bloques === 1 ? "bloque" : "bloques"}. `
+        + "Al terminar una categoría, el recorrido pasa a la llave que sigue o que antecede mientras el valor supere el mínimo; "
+        + "un valor menor es un corte entre bloques y ahí se detiene. "
+        + `Un orden lineal no conserva todas las vecindades: la categoría más parecida quedó contigua en ${conserva} de los casos.`
+        + (m.recortado ? ` Se muestran las primeras ${num(m.filas.length)}.` : "");
+}
+
+function pintarArbolDemo() {
+    const q = (estado.sondeo && estado.sondeo.consulta) || "";
+    const grafica = $("graf-arbol");
+    if (extra.demo && extra.demo.q === q) return pintarDemoListo(extra.demo.datos);
+    grafica.innerHTML = '<p class="g-vacio">Cargando la demostración…</p>';
+    Api.analiticaArbolDemo(q).then((datos) => {
+        extra.demo = { q, datos };
+        if (estado.arbolModo === "demo") pintarDemoListo(datos);
+    }).catch(() => { vacio(grafica, "No se pudo cargar la demostración."); });
+}
+
+function pintarDemoListo(datos) {
+    arbolConClaves($("graf-arbol"), datos.niveles, datos.traza, { aria: "Árbol B pequeño con sus claves" });
+    $("titulo-arbol").textContent = `Demostración: árbol de grado ${datos.grado} con sus claves`;
+    chips($("chips-arboles"), [
+        ["Grado t", num(datos.grado), "Cada nodo guarda entre 1 y 2t-1 claves"],
+        ["Términos en el árbol", num(datos.claves), "Repartidos en el alfabeto entre los más frecuentes"],
+        ["Altura", num(datos.altura), "Niveles desde la raíz hasta las hojas"],
+        ["Prefijo de la consulta", datos.prefijo || "—", "El último término de la consulta del sondeo"],
+    ]);
+    $("resumen-arbol").textContent = datos.traza
+        ? `Demostración de grado ${datos.grado} con ${num(datos.claves)} términos repartidos en el alfabeto. El prefijo «${datos.prefijo}» baja por el camino naranja `
+          + `(${num(datos.niveles.length)} niveles) y barre las hojas contiguas en violeta. Pasa el ratón sobre una caja para ver sus claves.`
+        : `Demostración de grado ${datos.grado} con ${num(datos.claves)} términos repartidos en el alfabeto. Escribe una consulta arriba para ver su camino. Pasa el ratón sobre una caja para ver sus claves.`;
+}
+
 function pintarArboles(animar = false) {
     const c = estado.corpus;
     if (!c) return;
@@ -321,6 +452,11 @@ function pintarArboles(animar = false) {
     const v = a.vocabulario;
     const s = estado.sondeo;
     const traza = s && s.vocabulario ? s.vocabulario : null;
+    if (estado.arbolModo === "demo") {
+        pintarArbolDemo();
+        return;
+    }
+    $("titulo-arbol").textContent = "Árbol del vocabulario, nivel por nivel";
 
     chips($("chips-arboles"), [
         ["Grado t", num(a.grado), `Cada nodo guarda entre ${a.grado - 1} y ${2 * a.grado - 1} claves (la raíz, menos)`],
@@ -344,7 +480,7 @@ function pintarArboles(animar = false) {
         tip: `${num(x.arboles)} árboles de postings tienen altura ${x.altura}`,
     })), { log: true, etiquetaY: "árboles (escala log)", aria: "Alturas de los árboles de postings", animar });
     $("nota-alturas").textContent = `${porcentaje(p.una_hoja, p.arboles)} % de los ${num(p.arboles)} árboles de postings son una sola hoja `
-        + `(hasta ${num(2 * a.grado - 1)} documentos): ahí el árbol B hace de lista ordenada; solo los términos frecuentes ganan altura.`;
+        + `(hasta ${num(2 * a.grado - 1)} documentos). Aquí el árbol B funciona como lista ordenada: su beneficio real está en el vocabulario y en las categorías, no en los postings.`;
 
     // Un árbol B por categoría
     const k = a.categorias;
@@ -357,6 +493,7 @@ function pintarArboles(animar = false) {
     })), { aria: "Documentos por categoría", animar });
     $("nota-categorias").textContent = `${num(k.categorias)} categorías en un árbol B de altura ${k.altura}; cada una guarda sus documentos `
         + `en su propio árbol (clave: idioma, nombre, posición). Se resaltan las categorías que la consulta nombra completas.`;
+    pintarMapa(nombradas);
 }
 
 // --- Sondeo de una consulta ----------------------------------------------------------------------------------
@@ -460,6 +597,7 @@ segmentado("modo-indice", estado.modo, (valor) => {
 segmentado("zipf-fuente", estado.zipf.fuente, (valor) => { estado.zipf.fuente = valor; pintarZipf(true); });
 segmentado("zipf-escala", estado.zipf.escala, (valor) => { estado.zipf.escala = valor; pintarZipf(true); });
 segmentado("heaps-fuente", estado.heaps.fuente, (valor) => { detenerReproduccion(); estado.heaps.fuente = valor; pintarHeaps(true); });
+segmentado("arbol-modo", estado.arbolModo, (valor) => { estado.arbolModo = valor; pintarArboles(true); });
 segmentado("heaps-escala", estado.heaps.escala, (valor) => { detenerReproduccion(); estado.heaps.escala = valor; pintarHeaps(true); });
 
 $("histo-log").addEventListener("change", (evento) => {
@@ -484,6 +622,11 @@ setInterval(refrescarReloj, 1000);
 const inicial = new URLSearchParams(window.location.search).get("q");
 if (inicial) $("sondeo-q").value = inicial;
 
+cargarCache();
+cargarRetencion();
+setInterval(() => { if ($("en-vivo").checked && !document.hidden) cargarCache(); }, REFRESCO_USO_MS);
+
 Promise.all([cargarCorpus(true), cargarUso(true)]).then(() => {
     if (inicial) sondear(inicial);
 });
+

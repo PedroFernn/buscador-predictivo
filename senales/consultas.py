@@ -22,6 +22,7 @@ LARGO_MAX_CONSULTA = 64
 USO_TTL_S = 2.0            # uso() se recalcula a lo más cada tanto (la página de analítica lo consulta seguido)
 USO_MAX_EVENTOS = 200_000  # uso() mide sobre las últimas consultas de la ventana, no sobre todas
 USO_TOP = 10
+STATS_PREFIJOS_MAX = 4_096  # prefijos con contadores de cache; al pasarse se quedan los más pedidos
 
 
 class HistorialConsultas:
@@ -38,6 +39,8 @@ class HistorialConsultas:
         self.moderadas = 0
         self._cache = OrderedDict()  # (prefijo, k) -> (hora, filas)
         self._uso = None             # (hora, resultado de uso())
+        self._peticiones = Counter()  # prefijo -> veces pedido a sugerir()
+        self._aciertos = Counter()    # prefijo -> veces servido desde el cache
 
     # --- escritura ------------------------------------------------------
     def registrar(self, texto):
@@ -80,12 +83,44 @@ class HistorialConsultas:
         guardada = self._cache.get((p, k))
         if guardada is not None and ahora - guardada[0] < self.cache_ttl_s:
             self._cache.move_to_end((p, k))
+            self._anotar(p, acierto=True)
             return self._respuesta(p, guardada[1], "cache")
         filas = self.almacen.consultas_frecuentes(ahora - self.ventana_s, p, self.min_frecuencia, k)
         self._cache[(p, k)] = (ahora, filas)
         if len(self._cache) > self.max_cache:
             self._cache.popitem(last=False)
+        self._anotar(p, acierto=False)
         return self._respuesta(p, filas, "tabla")
+
+    def _anotar(self, prefijo, acierto):
+        self._peticiones[prefijo] += 1
+        if acierto:
+            self._aciertos[prefijo] += 1
+        if len(self._peticiones) > STATS_PREFIJOS_MAX:
+            quedan = {p for p, _ in self._peticiones.most_common(STATS_PREFIJOS_MAX // 2)}
+            for contador in (self._peticiones, self._aciertos):
+                for p in [p for p in contador if p not in quedan]:
+                    del contador[p]
+
+    def aciertos_cache(self, max_puntos=400):
+        """Tasa de aciertos del cache por rango de prefijo (rango 1 = el más pedido).
+
+        Cada escritura (registrar) vacía el cache, así que la tasa depende de cuánto tráfico de
+        escritura haya entre peticiones: es el comportamiento real, no uno idealizado."""
+        pedidos = self._peticiones.most_common(max_puntos)
+        total = sum(self._peticiones.values())
+        aciertos = sum(self._aciertos.values())
+        return {
+            "prefijos": len(self._peticiones),
+            "peticiones": total,
+            "aciertos": aciertos,
+            "tasa": round(aciertos / total, 4) if total else None,
+            "en_cache": len(self._cache),
+            "puntos": [
+                {"rango": r, "prefijo": p, "peticiones": n, "tasa": round(self._aciertos[p] / n, 4)}
+                for r, (p, n) in enumerate(pedidos, 1)
+            ],
+        }
 
     @staticmethod
     def _respuesta(prefijo, filas, origen):
@@ -160,4 +195,5 @@ def _serie_heaps(curva):
             "r2": round(ajuste["r2"], 3), "puntos": ajuste["puntos"],
         },
     }
+
 

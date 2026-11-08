@@ -176,6 +176,11 @@ class Senales:
         with self._lock:
             return self.historial.uso()
 
+    def aciertos_cache(self):
+        """Tasa de aciertos del cache de prefijos por rango de prefijo (ver HistorialConsultas)."""
+        with self._lock:
+            return self.historial.aciertos_cache()
+
     def estadisticas(self):
         with self._lock:
             return {
@@ -264,6 +269,7 @@ class Senales:
 
     def cerrar(self):
         self.almacen.cerrar()
+
 
 
 

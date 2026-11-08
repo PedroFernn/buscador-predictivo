@@ -61,6 +61,18 @@ export function analiticaUso() {
     return pedirJSON("/api/analitica/uso");
 }
 
+export function analiticaCache() {
+    return pedirJSON("/api/analitica/cache");
+}
+
+export function analiticaRetencion(eventos = 60000) {
+    return pedirJSON(`/api/analitica/retencion?eventos=${eventos}`);
+}
+
+export function analiticaArbolDemo(consulta, senal) {
+    return pedirJSON(`/api/analitica/arbol-demo?grado=2&n=22&q=${encodeURIComponent(consulta || "")}`, { signal: senal });
+}
+
 export function analiticaSondeo(consulta, senal) {
     return pedirJSON(`/api/analitica/sondeo?q=${encodeURIComponent(consulta)}`, { signal: senal });
 }
@@ -81,4 +93,5 @@ export async function admin(ruta, token, cuerpo) {
     }
     return datos;
 }
+
 

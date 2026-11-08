@@ -20,8 +20,9 @@ Es relevancia por retroalimentación (Rocchio) sobre el mismo espacio vectorial 
      nombre contiene todo lo que buscó (esos ya los mostró su búsqueda).
   5. Puentes. Si la afinidad directa no alcanza para llenar la lista y la persona terminó una
      categoría (todo lo suyo ya lo vio, o la buscó por su nombre y cabía entera en los
-     resultados), el árbol de esa categoría la lleva a la rama más cercana de otro árbol
-     (ver categorias.py) y de ahí salen las sugerencias que faltan, marcadas con `puente`.
+     resultados), el recorrido sigue por las llaves del mapa de categorías (NN_categoria, ver
+     categorias.py): la llave que sigue o antecede es la rama más cercana de otro árbol, y de
+     ahí salen las sugerencias que faltan, marcadas con `puente`.
 
 Sin estado: nada de lo recibido se guarda en el servidor. Funciones puras, sin Flask.
 """
@@ -134,7 +135,7 @@ def _por_puentes(indice, textos, tocadas, dominante, visto, vistos, neg, norma_n
     def omitir(posicion):
         return visto(posicion) or _identidad(indice.catalogo[posicion]) in vistos
 
-    rutas = C.puentes(indice.categorias, tocadas, textos, dominante, visto, omitir, faltan)
+    rutas = C.puentes(indice.categorias, indice.mapa, tocadas, textos, dominante, visto, omitir, faltan)
     normas = indice.normas[MODO]
     candidatos = []
     for similitud, origen, padre, destino, posiciones in rutas:
@@ -227,5 +228,6 @@ def recomendar(indice, consultas, reacciones, dominante, limite=P.REC_LIMITE):
             neg, norma_neg, limite - len(elementos),
         ))
     return {"elementos": elementos}
+
 
 

@@ -91,6 +91,13 @@
                 </aside>
             </div>
             <p class="nota">Los términos de la consulta del sondeo se marcan en naranja sobre la gráfica del catálogo.</p>
+            <p class="nota" id="nota-zipf"></p>
+            <figure class="cache-figura">
+                <figcaption>Cache de prefijos: qué fracción de las peticiones sale del cache, según lo popular que sea el prefijo</figcaption>
+                <div id="chips-cache" class="datos"></div>
+                <div class="lienzo" id="graf-cache"><p class="g-vacio">Cargando…</p></div>
+                <p class="nota" id="nota-cache"></p>
+            </figure>
         </section>
 
         <!-- 3 · Heaps -->
@@ -115,6 +122,12 @@
             <div id="chips-heaps" class="datos"></div>
             <div class="lienzo" id="graf-heaps"><p class="g-vacio">Cargando…</p></div>
             <p class="nota" id="nota-heaps"></p>
+            <figure>
+                <figcaption>Sin política frente a la ventana (simulación con la misma ley)</figcaption>
+                <div id="chips-retencion" class="datos"></div>
+                <div class="lienzo" id="graf-retencion"><p class="g-vacio">Calculando…</p></div>
+                <p class="nota" id="nota-retencion"></p>
+            </figure>
         </section>
 
         <!-- 4 · Árboles B -->
@@ -122,12 +135,18 @@
             <header class="panel-cabecera">
                 <div>
                     <h2>4 · Árboles B</h2>
-                    <p class="lema">El vocabulario es un árbol B (término → idf): una consulta por prefijo baja a la primera hoja en O(log V) y recorre solo las hojas contiguas. Cada posting y cada categoría son, además, árboles B propios.</p>
+                    <p class="lema">El vocabulario es un árbol B (término → idf): una consulta por prefijo baja a la primera hoja en O(log V) y recorre solo las hojas contiguas. Cada posting y cada categoría son, además, árboles B propios; y las categorías llevan una llave forzada <code>NN_categoria</code> que las ordena por cercanía, así que al terminar una el recorrido sigue en la llave contigua.</p>
                 </div>
             </header>
+            <div class="controles" style="margin:0 0 0.8rem">
+                <div class="segmentado" id="arbol-modo" role="group" aria-label="Vista del árbol">
+                    <button type="button" data-valor="vocabulario">Vocabulario completo</button>
+                    <button type="button" data-valor="demo">Demostración con claves (grado 2)</button>
+                </div>
+            </div>
             <div id="chips-arboles" class="datos"></div>
             <figure>
-                <figcaption>Árbol del vocabulario, nivel por nivel</figcaption>
+                <figcaption><span id="titulo-arbol">Árbol del vocabulario, nivel por nivel</span></figcaption>
                 <div class="lienzo" id="graf-arbol"><p class="g-vacio">Cargando…</p></div>
                 <ul class="leyenda-arbol" aria-label="Leyenda">
                     <li><i class="muestra lleno"></i> nodo (más oscuro = más lleno)</li>
@@ -148,6 +167,11 @@
                     <p class="nota" id="nota-categorias"></p>
                 </figure>
             </div>
+            <figure>
+                <figcaption><span>Mapa relacional: las llaves <code>NN_categoria</code> en el orden en que el árbol las recorre</span></figcaption>
+                <div class="lienzo" id="graf-mapa"><p class="g-vacio">Cargando…</p></div>
+                <p class="nota" id="nota-mapa"></p>
+            </figure>
         </section>
 
         <footer class="referencias">
@@ -165,3 +189,4 @@
     <script type="module" src="{{ url_for('static', filename='js/analitica.js') }}"></script>
 </body>
 </html>
+
