@@ -78,6 +78,16 @@ class AlmacenEventos:
                 (*tipos, antes_de),
             ).rowcount
 
+    def vaciar(self, tipos):
+        """Borra TODOS los eventos de esos tipos, sin mirar la fecha. Devuelve cuántos."""
+        tipos = tuple(tipos)
+        if not tipos:
+            return 0
+        with self._lock:
+            return self._con.execute(
+                f"DELETE FROM eventos WHERE tipo IN ({_marcas(len(tipos))})", tipos,
+            ).rowcount
+
     def eliminar_consultas(self, claves):
         claves = list(claves)
         if not claves:
@@ -135,6 +145,14 @@ class AlmacenEventos:
                 "SELECT COUNT(*) FROM eventos WHERE tipo = 'consulta' AND ts >= ? GROUP BY consulta",
                 (desde,))]
 
+    def consultas_en_orden(self, desde, limite):
+        """Las últimas `limite` consultas (claves) desde `desde`, en orden cronológico."""
+        with self._lock:
+            return [f[0] for f in self._con.execute(
+                "SELECT consulta FROM (SELECT consulta, ts, id FROM eventos "
+                "WHERE tipo = 'consulta' AND ts >= ? ORDER BY ts DESC, id DESC LIMIT ?) ORDER BY ts, id",
+                (desde, limite))]
+
     def conteo_por_tipo(self):
         with self._lock:
             return dict(self._con.execute("SELECT tipo, COUNT(*) FROM eventos GROUP BY tipo").fetchall())
@@ -147,3 +165,4 @@ class AlmacenEventos:
     def cerrar(self):
         with self._lock:
             self._con.close()
+

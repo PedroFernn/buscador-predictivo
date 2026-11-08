@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>El motor por dentro — Buscador Predictivo</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='analitica.css') }}">
+</head>
+<body class="pagina-analitica">
+
+    <main class="contenedor-ancho">
+        <a class="volver" href="{{ url_for('buscar.index') }}">← Volver al buscador</a>
+        <h1>📊 El motor por dentro</h1>
+        <p class="subtitulo">
+            Índice invertido, ley de Zipf, ley de Heaps y árboles B, medidos sobre el catálogo cargado y sobre el uso real.<br>
+            <span class="desglose">Todo se calcula con los mismos objetos que usa el buscador (busqueda/analitica.py).</span>
+        </p>
+
+        <div class="barra-vivo">
+            <label class="interruptor"><input type="checkbox" id="en-vivo" checked> En vivo</label>
+            <span id="estado-vivo" class="estado-vivo" role="status">Conectando…</span>
+        </div>
+
+        <section id="resumen" class="datos" aria-label="Resumen"></section>
+
+        <section class="sondeo" aria-label="Sondeo de una consulta">
+            <label for="sondeo-q">🔎 Sondea una consulta</label>
+            <input type="text" id="sondeo-q" maxlength="200" autocomplete="off" spellcheck="false"
+                   placeholder="Prueba: «pol», «fruta tropical», «ct»…">
+            <p id="sondeo-resumen" class="sondeo-resumen" role="status"></p>
+        </section>
+
+        <!-- 1 · Índice invertido -->
+        <section class="panel" id="panel-indice">
+            <header class="panel-cabecera">
+                <div>
+                    <h2>1 · Índice invertido</h2>
+                    <p class="lema">Cada término apunta a la lista de documentos donde aparece (su <em>posting</em>). Buscar es leer solo las listas de los términos de la consulta, no recorrer el catálogo.</p>
+                </div>
+                <div class="segmentado" id="modo-indice" role="group" aria-label="Modo del índice">
+                    <button type="button" data-valor="nombre">Nombre</button>
+                    <button type="button" data-valor="sinopsis">Sinopsis</button>
+                </div>
+            </header>
+            <div id="chips-indice" class="datos"></div>
+            <div class="rejilla-2">
+                <figure>
+                    <figcaption>Términos con más documentos</figcaption>
+                    <div class="lienzo" id="graf-top"><p class="g-vacio">Cargando…</p></div>
+                </figure>
+                <figure>
+                    <figcaption>
+                        Cuántos documentos tiene cada posting
+                        <label class="mini"><input type="checkbox" id="histo-log"> eje Y log</label>
+                    </figcaption>
+                    <div class="lienzo" id="graf-histo"><p class="g-vacio">Cargando…</p></div>
+                </figure>
+            </div>
+            <figure>
+                <figcaption>Postings que recorre la consulta del sondeo</figcaption>
+                <div class="lienzo" id="graf-sondeo"><p class="g-vacio">Escribe una consulta arriba para ver qué postings recorre.</p></div>
+                <p class="nota" id="resumen-postings"></p>
+            </figure>
+        </section>
+
+        <!-- 2 · Zipf -->
+        <section class="panel" id="panel-zipf">
+            <header class="panel-cabecera">
+                <div>
+                    <h2>2 · Ley de Zipf</h2>
+                    <p class="lema">La frecuencia de un término cae como f(r) ≈ C / r<sup>s</sup> con su rango r: unos pocos términos dominan y hay una cola larga. En log-log es una recta de pendiente −s.</p>
+                </div>
+                <div class="controles">
+                    <div class="segmentado" id="zipf-fuente" role="group" aria-label="Fuente de los datos">
+                        <button type="button" data-valor="catalogo">Catálogo</button>
+                        <button type="button" data-valor="consultas">Consultas reales</button>
+                    </div>
+                    <div class="segmentado" id="zipf-escala" role="group" aria-label="Escala de los ejes">
+                        <button type="button" data-valor="log">log-log</button>
+                        <button type="button" data-valor="lineal">lineal</button>
+                    </div>
+                </div>
+            </header>
+            <div id="chips-zipf" class="datos"></div>
+            <div class="rejilla-grafica">
+                <div class="lienzo" id="graf-zipf"><p class="g-vacio">Cargando…</p></div>
+                <aside class="lateral">
+                    <h3 id="titulo-top-zipf">Términos más frecuentes</h3>
+                    <ol id="top-zipf" class="top"></ol>
+                </aside>
+            </div>
+            <p class="nota">Los términos de la consulta del sondeo se marcan en naranja sobre la gráfica del catálogo.</p>
+        </section>
+
+        <!-- 3 · Heaps -->
+        <section class="panel" id="panel-heaps">
+            <header class="panel-cabecera">
+                <div>
+                    <h2>3 · Ley de Heaps</h2>
+                    <p class="lema">El vocabulario crece sin tope con el texto: V(n) ≈ K · n<sup>β</sup>. Por eso el índice crece con el catálogo y la tabla de consultas tiene que olvidar (ventana deslizante).</p>
+                </div>
+                <div class="controles">
+                    <div class="segmentado" id="heaps-fuente" role="group" aria-label="Fuente de los datos">
+                        <button type="button" data-valor="catalogo">Catálogo</button>
+                        <button type="button" data-valor="consultas">Consultas reales</button>
+                    </div>
+                    <div class="segmentado" id="heaps-escala" role="group" aria-label="Escala de los ejes">
+                        <button type="button" data-valor="log">log-log</button>
+                        <button type="button" data-valor="lineal">lineal</button>
+                    </div>
+                    <button type="button" class="accion" id="heaps-reproducir">▶ Reproducir</button>
+                </div>
+            </header>
+            <div id="chips-heaps" class="datos"></div>
+            <div class="lienzo" id="graf-heaps"><p class="g-vacio">Cargando…</p></div>
+            <p class="nota" id="nota-heaps"></p>
+        </section>
+
+        <!-- 4 · Árboles B -->
+        <section class="panel" id="panel-arboles">
+            <header class="panel-cabecera">
+                <div>
+                    <h2>4 · Árboles B</h2>
+                    <p class="lema">El vocabulario es un árbol B (término → idf): una consulta por prefijo baja a la primera hoja en O(log V) y recorre solo las hojas contiguas. Cada posting y cada categoría son, además, árboles B propios.</p>
+                </div>
+            </header>
+            <div id="chips-arboles" class="datos"></div>
+            <figure>
+                <figcaption>Árbol del vocabulario, nivel por nivel</figcaption>
+                <div class="lienzo" id="graf-arbol"><p class="g-vacio">Cargando…</p></div>
+                <ul class="leyenda-arbol" aria-label="Leyenda">
+                    <li><i class="muestra lleno"></i> nodo (más oscuro = más lleno)</li>
+                    <li><i class="muestra descenso"></i> descenso de la raíz a la hoja</li>
+                    <li><i class="muestra barrido"></i> barrido de hojas contiguas</li>
+                </ul>
+                <p class="nota" id="resumen-arbol"></p>
+            </figure>
+            <div class="rejilla-2">
+                <figure>
+                    <figcaption>Alturas de los árboles de postings (uno por término)</figcaption>
+                    <div class="lienzo" id="graf-alturas"><p class="g-vacio">Cargando…</p></div>
+                    <p class="nota" id="nota-alturas"></p>
+                </figure>
+                <figure>
+                    <figcaption>Bosque de categorías (un árbol de documentos por categoría)</figcaption>
+                    <div class="lienzo" id="graf-categorias"><p class="g-vacio">Cargando…</p></div>
+                    <p class="nota" id="nota-categorias"></p>
+                </figure>
+            </div>
+        </section>
+
+        <footer class="referencias">
+            <h3>Referencias</h3>
+            <ul>
+                <li>Zipf, G. K. (1949). <em>Human Behavior and the Principle of Least Effort</em>. Addison-Wesley.</li>
+                <li>Heaps, H. S. (1978). <em>Information Retrieval: Computational and Theoretical Aspects</em>. Academic Press.</li>
+                <li>Bayer, R. y McCreight, E. (1972). Organization and maintenance of large ordered indexes. <em>Acta Informatica, 1</em>(3), 173–189.</li>
+                <li>Manning, C. D., Raghavan, P. y Schütze, H. (2008). <em>Introduction to Information Retrieval</em>. Cambridge University Press (§3.1 diccionarios con árboles B; §5.1 leyes de Heaps y Zipf).</li>
+                <li>Cormen, T. H., Leiserson, C. E., Rivest, R. L. y Stein, C. <em>Introduction to Algorithms</em> (cap. 18, árboles B).</li>
+            </ul>
+        </footer>
+    </main>
+
+    <script type="module" src="{{ url_for('static', filename='js/analitica.js') }}"></script>
+</body>
+</html>

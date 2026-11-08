@@ -1,7 +1,8 @@
-"""Índice: IDF, vectores tf-idf normalizados por campo y listas de postings por modo.
+"""Índice: IDF, vectores tf-idf normalizados por campo y postings por modo.
 
-Se construye una vez por carga del catálogo. Cada posting guarda el peso del término
-en el documento, de modo que la consulta suma `peso_q × peso_d` por término sin
+Se construye una vez por carga del catálogo. Cada término tiene un posting: un árbol B
+ordenado por la posición del documento (`posicion -> peso del término en ese documento`),
+de modo que la consulta suma `peso_q × peso_d` por término sin
 recorrer el vector de cada documento (O(postings tocados), no O(candidatos × |q|)).
 
 Ojo con los dos tipos de identificador: `posicion` es el lugar del documento dentro de
@@ -12,9 +13,11 @@ import math
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
+from busqueda import categorias as C
 from busqueda import parametros as P
+from nucleo.arbol_b import ArbolB
 from nucleo.emojis import extraer_emojis, normalizar_emoji
-from nucleo.texto import tokenizar
+from nucleo.lexico import tokenizar_contenido
 
 
 @dataclass(frozen=True)
@@ -24,11 +27,12 @@ class Indice:
     ids: frozenset      # ids de repositorio presentes
     posicion_por_id: dict  # id de repositorio -> posición interna
     idf: dict
-    vocabulario: list   # ordenado: permite bisect para expandir prefijos
-    postings: dict      # modo -> {término: [(posicion, peso)]}
+    vocabulario: ArbolB  # árbol B término -> idf: expande prefijos en O(log V + k)
+    postings: dict      # modo -> {término: ArbolB posición -> peso}, ordenado por posición del documento
     normas: dict        # modo -> [norma del vector por posición]
     vectores: dict      # modo -> [{término: peso}] por posición (perfil de gustos, ver recomendador.py)
     emoji_a_docs: dict  # clave de emoji normalizada -> [posicion]
+    categorias: ArbolB  # árbol B de categorías, cada una con su propio árbol de documentos (ver categorias.py)
 
 
 def sanear(documento):
@@ -59,7 +63,8 @@ def construir_indice(documentos):
     catalogo = [d for _, d in pares]
     n = len(catalogo)
     campos = P.CAMPOS
-    tokens_por_doc = [{campo: tokenizar(doc[campo]) for campo, _ in campos} for doc in catalogo]
+    # Sin palabras de relleno: la consulta nunca las lee (consulta.py las quita), no merecen posting
+    tokens_por_doc = [{campo: tokenizar_contenido(doc[campo]) for campo, _ in campos} for doc in catalogo]
 
     df = defaultdict(int)
     for por_campo in tokens_por_doc:
@@ -70,9 +75,11 @@ def construir_indice(documentos):
             df[termino] += 1
 
     idf = {termino: math.log10(1 + n / frecuencia) for termino, frecuencia in df.items()}
-    vocabulario = sorted(idf)
+    vocabulario = ArbolB(P.ARBOL_B_GRADO)
+    for termino, valor in idf.items():
+        vocabulario.insertar(termino, valor)
 
-    postings = {modo: defaultdict(list) for modo in P.CAMPOS_POR_MODO}
+    postings = {modo: defaultdict(lambda: ArbolB(P.ARBOL_B_GRADO)) for modo in P.CAMPOS_POR_MODO}
     normas = {modo: [] for modo in P.CAMPOS_POR_MODO}
     vectores = {modo: [] for modo in P.CAMPOS_POR_MODO}
 
@@ -91,7 +98,7 @@ def construir_indice(documentos):
             normas[modo].append(math.sqrt(sum(p * p for p in vector.values())))
             vectores[modo].append(dict(vector))
             for termino, peso in vector.items():
-                postings[modo][termino].append((posicion, peso))
+                postings[modo][termino].insertar(posicion, peso)
 
     # Índice de emojis. Se lee del dato crudo: sanear() rellena 📄 en los documentos
     # sin emoji y eso no debe contar como coincidencia.
@@ -111,6 +118,7 @@ def construir_indice(documentos):
         normas=normas,
         vectores=vectores,
         emoji_a_docs=dict(emoji_a_docs),
+        categorias=C.construir(catalogo, vectores[C.MODO], normas[C.MODO]),
     )
 
 

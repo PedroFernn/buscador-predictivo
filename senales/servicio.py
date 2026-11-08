@@ -27,6 +27,12 @@ from senales.moderacion import Moderador
 from senales.reacciones import TIPOS, VIDA_MEDIA_S, Reacciones
 
 DIA_S = 86_400
+# Qué se puede borrar por separado (alcance -> tipos de evento del almacén)
+ALCANCES = {
+    "reacciones": TIPOS,                    # me gusta / me encanta / no me gusta
+    "clics": ("clic", "impresion"),         # lo que alimenta el aprendizaje por clics
+    "consultas": ("consulta",),             # frecuencia real: "Más buscadas"
+}
 MAX_IMPRESIONES = 50   # ids por lote de impresiones
 PURGA_CADA = 500       # escrituras entre purgas
 
@@ -165,6 +171,11 @@ class Senales:
         with self._lock:
             return self.historial.sugerir(prefijo, k)
 
+    def uso(self):
+        """Zipf y Heaps del tráfico real de consultas (ver HistorialConsultas.uso)."""
+        with self._lock:
+            return self.historial.uso()
+
     def estadisticas(self):
         with self._lock:
             return {
@@ -173,6 +184,44 @@ class Senales:
                 "aprendizaje": self.clics.estadisticas(),
                 "max_claves": self._max_claves,
             }
+
+    # --- reinicio y datos de prueba -----------------------------------------
+    def ahora(self):
+        """La hora según el reloj de este objeto (el de las pruebas puede ser falso)."""
+        return self._reloj()
+
+    def reiniciar(self, alcances=None):
+        """Borra señales de uso del almacén y de la memoria. Es irreversible.
+
+        alcances: claves de ALCANCES (None: todas). Devuelve {alcance: eventos borrados}.
+        Otros procesos que compartan el archivo reconstruyen su memoria en unos segundos
+        (ver _sincronizar)."""
+        alcances = tuple(ALCANCES) if alcances is None else tuple(dict.fromkeys(alcances))
+        desconocidos = [a for a in alcances if a not in ALCANCES]
+        if desconocidos:
+            raise ValueError(f"alcance desconocido: {', '.join(map(str, desconocidos))}")
+        with self._lock:
+            borrados = {a: self.almacen.vaciar(ALCANCES[a]) for a in alcances}
+            if "consultas" in alcances:
+                self.historial.moderadas = 0
+            self.historial.vaciar_cache()
+            self._recargar()
+            return borrados
+
+    def cargar_eventos(self, filas):
+        """Inserta eventos ya armados y con su hora (tipo, doc_id, consulta, posicion, texto, ts).
+
+        Se confía en las filas: no pasan por la moderación ni por las validaciones de la API.
+        Pensado para datos de prueba (ver senales/poblar.py). Devuelve cuántas se insertaron."""
+        filas = list(filas)
+        if not filas:
+            return 0
+        with self._lock:
+            self.almacen.agregar_muchos(filas)
+            self.historial.vaciar_cache()
+            self._purgar()
+            self._recargar()
+        return len(filas)
 
     # --- mantenimiento ----------------------------------------------------
     def _escrito(self, n=1):
@@ -215,5 +264,6 @@ class Senales:
 
     def cerrar(self):
         self.almacen.cerrar()
+
 
 

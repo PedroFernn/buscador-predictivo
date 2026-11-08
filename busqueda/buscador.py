@@ -22,6 +22,7 @@ from collections import Counter
 
 from busqueda import parametros as P
 from busqueda import ranking, recomendador
+from busqueda.analitica import Analitica
 from busqueda.consulta import analizar
 from busqueda.indice import construir_indice
 
@@ -39,6 +40,7 @@ class Buscador:
         self.senales = senales
         self._lock = threading.Lock()
         self._indice = None
+        self._analitica = None   # (indice, Analitica) del índice vigente
         self._cargado_en = 0.0
         self.recargar()
 
@@ -64,6 +66,15 @@ class Buscador:
                         log.exception("No se pudo recargar el catálogo")
                         self._cargado_en = time.monotonic()
         return self._indice
+
+    @property
+    def analitica(self):
+        """Medidas del índice vigente (Zipf, Heaps, árboles...). Se calculan una vez por carga."""
+        indice = self.indice
+        guardada = self._analitica
+        if guardada is None or guardada[0] is not indice:
+            guardada = self._analitica = (indice, Analitica(indice))
+        return guardada[1]
 
     def existe(self, doc_id):
         """¿Hay un documento con ese id? (la API lo usa para no registrar señales de ids falsos)"""
@@ -167,5 +178,6 @@ class Buscador:
                 for doc in ordenados
             ],
         }
+
 
 

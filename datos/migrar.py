@@ -1,6 +1,6 @@
 """Crea las tablas e importa catalogo.json a la base de datos.
 
-    python -m datos.migrar                      # usa DATABASE_URL, o sqlite:///catalogo.db
+    python -m datos.migrar                      # usa DATABASE_URL, o catalogo.db en la raíz del proyecto
     python -m datos.migrar --url postgresql://usuario:clave@host/base
     python -m datos.migrar --reemplazar         # vacía documentos y categorías antes
 """
@@ -8,12 +8,13 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 from sqlalchemy import delete, func, insert, select
 
-from datos.repositorio import CATALOGO_JSON, categorias, crear_engine, documentos, metadata
+from datos.repositorio import URL_POR_DEFECTO, categorias, crear_engine, documentos, metadata
 
-URL_POR_DEFECTO = "sqlite:///catalogo.db"
+CATALOGO_JSON = Path(__file__).resolve().parent.parent / "catalogo.json"  # solo fuente de importación
 
 
 def importar(engine, ruta_json, reemplazar=False):
@@ -68,3 +69,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

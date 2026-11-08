@@ -2,7 +2,6 @@
 
 Funciones puras (sin estado): reciben el índice y devuelven un `Analisis`.
 """
-import bisect
 import math
 from dataclasses import dataclass, field
 from typing import NamedTuple
@@ -96,7 +95,7 @@ def interpretar_consulta(texto, extra=()):
     )
 
 
-def vector_consulta(terminos, idf, vocabulario):
+def vector_consulta(terminos, idf, vocabulario):  # vocabulario: ArbolB término -> idf
     """Cada prefijo escrito se expande a los términos del vocabulario que empiezan con él,
     ponderados por idf y por la fracción ya escrita (cobertura); los sinónimos pesan menos."""
     pesos = {}
@@ -111,15 +110,11 @@ def vector_consulta(terminos, idf, vocabulario):
                 aporte(token, idf[token])
         else:
             es_concepto = token in SINONIMOS
-            inicio = bisect.bisect_left(vocabulario, token)
-            for i in range(inicio, len(vocabulario)):
-                termino = vocabulario[i]
-                if not termino.startswith(token):
-                    break
+            for termino, idf_termino in vocabulario.prefijo(token):
                 cobertura = len(token) / len(termino)
                 if es_concepto and cobertura < P.COBERTURA_MIN_CONCEPTO:
                     continue
-                aporte(termino, idf[termino] * cobertura)
+                aporte(termino, idf_termino * cobertura)
 
         # Entender lo que busca: términos equivalentes (es/en/pt)
         for sinonimo in SINONIMOS.get(token, ()):
@@ -163,3 +158,5 @@ def analizar(consulta, indice):
         else VECTOR_VACIO
     )
     return Analisis(consulta, resumen, coinciden, interpretacion, vector)
+
+

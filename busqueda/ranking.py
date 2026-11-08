@@ -44,10 +44,15 @@ def factor_idioma(idioma_doc, dominante, coincide_emoji):
 
 
 def acumular_productos(vector, postings):
-    """Producto punto consulta·documento por posición, sumando por término."""
+    """Producto punto consulta·documento por posición, sumando por término.
+
+    Cada posting es un ArbolB `posicion -> peso`; se recorre en orden de posición."""
     productos = {}
     for termino, peso_q in vector.pesos.items():
-        for posicion, peso_d in postings.get(termino, ()):
+        posting = postings.get(termino)
+        if posting is None:
+            continue
+        for posicion, peso_d in posting.items():
             productos[posicion] = productos.get(posicion, 0.0) + peso_q * peso_d
     return productos
 

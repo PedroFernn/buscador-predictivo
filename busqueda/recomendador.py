@@ -18,20 +18,23 @@ Es relevancia por retroalimentación (Rocchio) sobre el mismo espacio vectorial 
   4. Afinidad = coseno(perfil+, doc) − REC_PESO_NEGATIVO · coseno(perfil−, doc), por el prior
      de idioma de ranking.py. Quedan fuera lo que la persona ya valoró y los documentos cuyo
      nombre contiene todo lo que buscó (esos ya los mostró su búsqueda).
+  5. Puentes. Si la afinidad directa no alcanza para llenar la lista y la persona terminó una
+     categoría (todo lo suyo ya lo vio, o la buscó por su nombre y cabía entera en los
+     resultados), el árbol de esa categoría la lleva a la rama más cercana de otro árbol
+     (ver categorias.py) y de ahí salen las sugerencias que faltan, marcadas con `puente`.
 
 Sin estado: nada de lo recibido se guarda en el servidor. Funciones puras, sin Flask.
 """
 import math
 from collections import defaultdict
 
+from busqueda import categorias as C
 from busqueda import parametros as P
 from busqueda import ranking
+from busqueda.categorias import MODO
 from busqueda.consulta import VectorConsulta, analizar
 from nucleo.lexico import STOPWORDS
 from nucleo.texto import normalizar, tokenizar
-
-# Se compara en el modo que mira la descripción: ahí vive lo que distingue un gusto de otro
-MODO = "sinopsis"
 
 
 
@@ -96,9 +99,9 @@ def _identidad(doc):
     return normalizar(doc["nombre"]), doc["idioma"]
 
 
-def _elemento(doc, afinidad, motivos):
+def _elemento(doc, afinidad, motivos, puente=None):
     idioma = doc["idioma"]
-    return {
+    elemento = {
         "id": doc["id"],
         "nombre": doc["nombre"],
         "categoria": doc["categoria"],
@@ -110,6 +113,59 @@ def _elemento(doc, afinidad, motivos):
         "afinidad": round(afinidad, 4),
         "motivos": motivos,
     }
+    if puente:
+        elemento["puente"] = puente  # {"desde": categoría terminada, "hacia": rama a la que lleva}
+    return elemento
+
+
+def _coseno_centroide(indice, posicion, centroide):
+    norma = indice.normas[MODO][posicion]
+    if not norma:
+        return 0.0
+    vector = indice.vectores[MODO][posicion]
+    return sum(peso * vector.get(termino, 0.0) for termino, peso in centroide.items()) / norma
+
+
+def _por_puentes(indice, textos, tocadas, dominante, visto, vistos, neg, norma_neg, faltan):
+    """Sugerencias que salen de la rama más cercana a una categoría terminada.
+
+    afinidad = REC_PESO_PUENTE · similitud acumulada · (PISO + (1 − PISO) · coseno con el padre),
+    menos lo que se parezca a lo que no gustó. `vistos` son las identidades ya sugeridas."""
+    def omitir(posicion):
+        return visto(posicion) or _identidad(indice.catalogo[posicion]) in vistos
+
+    rutas = C.puentes(indice.categorias, tocadas, textos, dominante, visto, omitir, faltan)
+    normas = indice.normas[MODO]
+    candidatos = []
+    for similitud, origen, padre, destino, posiciones in rutas:
+        for posicion in posiciones:
+            doc = indice.catalogo[posicion]
+            if not normas[posicion]:
+                continue
+            cercania = _coseno_centroide(indice, posicion, padre.centroide)
+            afinidad = P.REC_PESO_PUENTE * similitud * (P.REC_PUENTE_PISO + (1 - P.REC_PUENTE_PISO) * cercania)
+            if neg:
+                resta = P.REC_PESO_NEGATIVO * neg.get(posicion, 0.0) / (norma_neg * normas[posicion])
+                if resta and afinidad - resta <= 0:
+                    continue
+                afinidad -= resta
+            afinidad *= ranking.factor_idioma(doc["idioma"], dominante, False)
+            candidatos.append((-afinidad, doc["nombre"], posicion, padre, origen, destino))
+
+    candidatos.sort(key=lambda c: c[:3])
+    elementos = []
+    for menos, _, posicion, padre, origen, destino in candidatos:
+        doc = indice.catalogo[posicion]
+        if _identidad(doc) in vistos:
+            continue
+        vistos.add(_identidad(doc))
+        elementos.append(_elemento(
+            doc, -menos, _motivos(indice, posicion, padre.centroide),
+            {"desde": origen.nombre, "hacia": destino.nombre},
+        ))
+        if len(elementos) == faltan:
+            break
+    return elementos
 
 
 def recomendar(indice, consultas, reacciones, dominante, limite=P.REC_LIMITE):
@@ -130,11 +186,22 @@ def recomendar(indice, consultas, reacciones, dominante, limite=P.REC_LIMITE):
     buscados = [terminos for terminos in (set(tokenizar(texto)) for texto, _ in consultas) if terminos]
     normas = indice.normas[MODO]
 
+    def visto(posicion):
+        doc = indice.catalogo[posicion]
+        return _identidad(doc) in conocidos or _ya_buscado(doc, buscados)
+
+    tocadas = {  # categorías donde la persona ya valoró algo
+        C.clave_categoria(indice.catalogo[indice.posicion_por_id[doc_id]])
+        for doc_id in valorados if doc_id in indice.posicion_por_id
+    }
     candidatos = []
     for posicion, producto in pos.items():
         doc = indice.catalogo[posicion]
+        if not normas[posicion]:
+            continue
         # `conocidos` incluye al propio documento valorado y a sus duplicados de nombre e idioma
-        if _identidad(doc) in conocidos or _ya_buscado(doc, buscados) or not normas[posicion]:
+        if _identidad(doc) in conocidos or _ya_buscado(doc, buscados):
+            tocadas.add(C.clave_categoria(doc))
             continue
         afinidad = producto / (norma_pos * normas[posicion])
         if neg:
@@ -154,4 +221,11 @@ def recomendar(indice, consultas, reacciones, dominante, limite=P.REC_LIMITE):
         elementos.append(_elemento(doc, -menos, _motivos(indice, posicion, positivo)))
         if len(elementos) == limite:
             break
+    if len(elementos) < limite:
+        elementos.extend(_por_puentes(
+            indice, [texto for texto, _ in consultas], tocadas, dominante, visto, vistos,
+            neg, norma_neg, limite - len(elementos),
+        ))
     return {"elementos": elementos}
+
+

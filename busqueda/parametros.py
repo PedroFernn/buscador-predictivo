@@ -27,6 +27,11 @@ CAMPOS_SINOPSIS = (
 )
 CAMPOS_POR_MODO = {"nombre": CAMPOS, "sinopsis": CAMPOS_SINOPSIS}
 
+# --- Vocabulario (árbol B) -----------------------------------------------------
+# Grado mínimo t del árbol B del vocabulario: cada nodo guarda entre t-1 y 2t-1 términos.
+# Afecta al índice (obliga a reindexar), no al ranking.
+ARBOL_B_GRADO = 16
+
 # --- Prior de idioma -----------------------------------------------------------
 # Documento del idioma seleccionado mantiene el 100% (o boost) de su score.
 # Documentos de otros idiomas sufren una penalización sobre su score coseno.
@@ -64,3 +69,15 @@ REC_MAX_TERMINOS = 40       # el perfil se poda a sus términos más pesados
 REC_PESO_NEGATIVO = 0.7     # cuánto resta parecerse a lo que no gustó
 REC_AFINIDAD_MIN = 0.03     # por debajo no se sugiere (ruido de términos sueltos)
 REC_MAX_MOTIVOS = 3         # términos del perfil que se muestran como "por qué"
+
+# --- Puentes entre categorías (bosque de árboles B, ver categorias.py) ------------
+# Cuando una categoría se termina (todo lo suyo ya se vio, o se buscó por su nombre y
+# cabía entera en la lista de resultados), la sugerencia sigue hacia la rama más cercana
+# de otro árbol. Los de CATEGORIA_* afectan al índice (obligan a reindexar).
+CATEGORIA_MAX_TERMINOS = 60   # términos del centroide de cada categoría
+CATEGORIA_VECINAS = 5         # categorías más cercanas que guarda cada una
+CATEGORIA_SIM_MIN = 0.05      # por debajo de esta similitud no se consideran vecinas
+REC_PUENTE_MIN_DOCS = 2       # una categoría con menos documentos (en el idioma) no cuenta como terminada
+REC_PUENTE_MAX_CATEGORIAS = 12  # tope de categorías exploradas por petición
+REC_PESO_PUENTE = 0.8         # un puente nunca iguala a una afinidad directa equivalente
+REC_PUENTE_PISO = 0.5         # parte del puntaje que da pertenecer a la rama; el resto, parecerse a la categoría de origen

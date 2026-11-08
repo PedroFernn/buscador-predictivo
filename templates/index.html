@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Buscador Predictivo Multilenguaje — SRI</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% if admin_habilitado %}<link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">{% endif %}
 </head>
 <body>
 
@@ -14,6 +15,46 @@
             SRI vectorial TF-IDF sobre {{ total }} documentos<br>
             <span class="desglose" id="desglose"></span>
         </p>
+        <p class="enlace-analitica"><a href="{{ url_for('analitica.pagina') }}">📊 Ver el motor por dentro: índice invertido, Zipf, Heaps y árboles</a></p>
+
+        {% if admin_habilitado %}
+        <!-- Solo existe si el servidor tiene ADMIN_TOKEN (ver api/admin.py y static/js/admin.js) -->
+        <details id="herramientas" class="herramientas">
+            <summary>🧪 Herramientas de prueba</summary>
+            <div class="herramientas-cuerpo">
+                <label class="campo">Token de administración
+                    <input type="password" id="admin-token" autocomplete="off" spellcheck="false">
+                </label>
+
+                <fieldset>
+                    <legend>Borrar (no se puede deshacer)</legend>
+                    <label><input type="checkbox" name="alcance" value="reacciones" checked> Reacciones del servidor</label>
+                    <label><input type="checkbox" name="alcance" value="clics" checked> Clics e impresiones (aprendizaje del ranking)</label>
+                    <label><input type="checkbox" name="alcance" value="consultas" checked> Consultas (alimentan "Más buscadas")</label>
+                    <label><input type="checkbox" id="borrar-local" checked> También mi historial y mis reacciones de este navegador</label>
+                    <div class="acciones">
+                        <button type="button" id="admin-borrar">Borrar selección</button>
+                        <button type="button" id="admin-borrar-todo" class="peligro">Limpieza total</button>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Generar datos de prueba</legend>
+                    <div class="numeros">
+                        <label>Búsquedas <input type="number" id="sim-consultas" value="200" min="0" max="2000"></label>
+                        <label>Reacciones <input type="number" id="sim-reacciones" value="300" min="0" max="5000"></label>
+                        <label>Semilla <input type="number" id="sim-semilla" min="0" placeholder="aleatoria"></label>
+                    </div>
+                    <label><input type="checkbox" id="sim-local" checked> Llenar también mi historial y mis reacciones de este navegador</label>
+                    <div class="acciones">
+                        <button type="button" id="admin-generar">Generar</button>
+                    </div>
+                </fieldset>
+
+                <p id="admin-estado" class="admin-estado" role="status"></p>
+            </div>
+        </details>
+        {% endif %}
 
         <!-- Selector del idioma dominante. Al cambiarlo se invierte el prior:
              lo que hundía a una palabra extranjera pasa a favorecerla. -->
@@ -35,6 +76,18 @@
             autocomplete="off"
             autofocus
         >
+
+        {% if admin_habilitado %}
+        <!-- Atajos de prueba (necesitan ADMIN_TOKEN; ver static/js/admin.js). Los números y la
+             semilla del "estado aleatorio" salen del panel "Herramientas de prueba". -->
+        <div class="acciones-rapidas" role="group" aria-label="Atajos de prueba">
+            <button type="button" id="rapido-limpiar" class="accion-rapida peligro"
+                    title="Borra reacciones, clics, consultas e historial (servidor y este navegador)">🧹 Limpiar buscador</button>
+            <button type="button" id="rapido-aleatorio" class="accion-rapida"
+                    title="Limpia todo y carga búsquedas y reacciones aleatorias">🎲 Estado aleatorio</button>
+            <span id="rapido-estado" class="rapido-estado" role="status"></span>
+        </div>
+        {% endif %}
 
         <!-- Términos a los que el sistema expandió la consulta (transparencia del modelo) -->
         <div id="prediccion" class="prediccion"></div>
@@ -75,7 +128,9 @@
     </main>
 
     <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% if admin_habilitado %}<script type="module" src="{{ url_for('static', filename='js/admin.js') }}"></script>{% endif %}
 </body>
 </html>
+
 
 

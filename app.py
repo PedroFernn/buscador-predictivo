@@ -19,6 +19,7 @@ def create_app(config=None, repositorio=None, senales=None):
     repositorio = repositorio or crear_repositorio(config.database_url)
 
     app = Flask(__name__)
+    app.extensions["config"] = config
     app.extensions["senales"] = senales
     app.extensions["buscador"] = Buscador(
         repositorio, recarga_segundos=config.recarga_segundos, senales=senales,

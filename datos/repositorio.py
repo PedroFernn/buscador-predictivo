@@ -8,12 +8,11 @@ una lista de dicts con las claves
 No sabe de dónde vienen. Para cambiar de fuente basta con elegirla en
 `crear_repositorio()` (config.database_url, que viene de DATABASE_URL); el resto no cambia.
 
-    DATABASE_URL sin definir  -> catalogo.json   (comportamiento anterior)
-    DATABASE_URL=sqlite:///catalogo.db
+    DATABASE_URL sin definir  -> sqlite:///<raíz del proyecto>/catalogo.db
+    DATABASE_URL=sqlite:///otra_ruta.db
     DATABASE_URL=postgresql://usuario:clave@host/base
     DATABASE_URL=mysql+pymysql://usuario:clave@host/base?charset=utf8mb4
 """
-import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -31,7 +30,8 @@ from sqlalchemy import (
     select,
 )
 
-CATALOGO_JSON = Path(__file__).resolve().parent.parent / "catalogo.json"
+CATALOGO_DB = Path(__file__).resolve().parent.parent / "catalogo.db"
+URL_POR_DEFECTO = f"sqlite:///{CATALOGO_DB.as_posix()}"  # ruta absoluta: no depende del cwd
 
 
 # =============================================================================
@@ -72,19 +72,6 @@ class RepositorioCatalogo(ABC):
 
 
 # =============================================================================
-# FUENTE: JSON
-# =============================================================================
-class RepositorioJSON(RepositorioCatalogo):
-    def __init__(self, ruta=CATALOGO_JSON):
-        self.ruta = Path(ruta)
-
-    def listar(self):
-        with open(self.ruta, encoding="utf-8") as f:
-            crudo = json.load(f)
-        return [{"id": i, **doc} for i, doc in enumerate(crudo, start=1)]
-
-
-# =============================================================================
 # FUENTE: SQL (SQLAlchemy: SQLite, PostgreSQL, MySQL, ...)
 # =============================================================================
 class RepositorioSQL(RepositorioCatalogo):
@@ -121,6 +108,13 @@ def crear_engine(url):
 
 def crear_repositorio(url=None):
     url = url or os.environ.get("DATABASE_URL")
-    if url:
-        return RepositorioSQL(crear_engine(url))
-    return RepositorioJSON()
+    if not url:
+        if not CATALOGO_DB.exists():  # SQLite crearía un archivo vacío y fallaría más tarde
+            raise FileNotFoundError(
+                f"No existe {CATALOGO_DB}. Genéralo con `python -m datos.migrar` "
+                "o define DATABASE_URL."
+            )
+        url = URL_POR_DEFECTO
+    return RepositorioSQL(crear_engine(url))
+
+

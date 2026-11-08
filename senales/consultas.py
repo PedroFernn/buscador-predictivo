@@ -13,12 +13,15 @@ y desalojo por lotes) por una consulta SQL sobre la tabla de eventos:
 
 Orden: mayor frecuencia, luego la más reciente, luego alfabético.
 """
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 
-from nucleo.estadistica import ajuste_zipf
+from nucleo.estadistica import ajuste_potencia, ajuste_zipf, curva_heaps, rango_frecuencia
 from nucleo.texto import clave_consulta
 
 LARGO_MAX_CONSULTA = 64
+USO_TTL_S = 2.0            # uso() se recalcula a lo más cada tanto (la página de analítica lo consulta seguido)
+USO_MAX_EVENTOS = 200_000  # uso() mide sobre las últimas consultas de la ventana, no sobre todas
+USO_TOP = 10
 
 
 class HistorialConsultas:
@@ -34,6 +37,7 @@ class HistorialConsultas:
         self.largo_max = largo_max
         self.moderadas = 0
         self._cache = OrderedDict()  # (prefijo, k) -> (hora, filas)
+        self._uso = None             # (hora, resultado de uso())
 
     # --- escritura ------------------------------------------------------
     def registrar(self, texto):
@@ -48,7 +52,13 @@ class HistorialConsultas:
         forma = " ".join(texto.split())[: self.largo_max * 2]
         self.almacen.agregar("consulta", self._reloj(), consulta=clave, texto=forma if forma != clave else None)
         self._cache.clear()
+        self._uso = None
         return True
+
+    def vaciar_cache(self):
+        """Olvida los prefijos ya resueltos (tras borrar o cargar eventos sin pasar por registrar())."""
+        self._cache.clear()
+        self._uso = None
 
     def aplicar_bloqueo(self):
         """Quita lo ya guardado que la moderación actual rechazaría (la lista pudo cambiar)."""
@@ -56,6 +66,7 @@ class HistorialConsultas:
         quitados = self.almacen.eliminar_consultas(malas)
         if quitados:
             self._cache.clear()
+            self._uso = None
         return quitados
 
     # --- lectura --------------------------------------------------------
@@ -97,3 +108,56 @@ class HistorialConsultas:
             "descartadas_por_moderacion": self.moderadas,
             "zipf": ajuste_zipf(sorted(frecuencias, reverse=True)),
         }
+
+    def uso(self):
+        """Zipf y Heaps medidos sobre el tráfico real que hay hoy en la ventana (para graficar).
+
+        Heaps solo ve lo que la ventana conserva: lo anterior se purgó, así que la curva es la del
+        tramo vivo, no la de toda la historia."""
+        ahora = self._reloj()
+        if self._uso is not None and ahora - self._uso[0] < USO_TTL_S:
+            return self._uso[1]
+        consultas = self.almacen.consultas_en_orden(ahora - self.ventana_s, USO_MAX_EVENTOS)
+        conteo = Counter(consultas)
+        frecuencias = sorted(conteo.values(), reverse=True)
+        m = min(len(frecuencias), 1000)
+        zipf = ajuste_potencia(range(1, m + 1), frecuencias[:m]) if m >= 10 else None
+        # Cuántas consultas distintas / términos distintos van apareciendo conforme llegan consultas
+        curva = curva_heaps([[c] for c in consultas])
+        curva_terminos = curva_heaps([c.split(" ") for c in consultas])
+        resultado = {
+            "eventos": len(consultas),
+            "distintas": len(conteo),
+            "ventana_segundos": self.ventana_s,
+            "min_frecuencia_publica": self.min_frecuencia,
+            "zipf": {
+                "puntos": rango_frecuencia(frecuencias),
+                "ajuste": None if zipf is None else {
+                    "exponente": round(-zipf["exponente"], 3), "constante": round(zipf["constante"], 3),
+                    "r2": round(zipf["r2"], 3), "puntos": m,
+                },
+                # Solo lo que ya es público (alcanzó el umbral): no se exponen consultas sueltas
+                "top": [{"consulta": c, "frecuencia": n} for c, n in conteo.most_common(USO_TOP)
+                        if n >= self.min_frecuencia],
+            },
+            "heaps": {
+                "consultas": _serie_heaps([(i, v) for i, _, v in curva]),
+                "terminos": _serie_heaps([(i, v) for i, _, v in curva_terminos]),
+            },
+        }
+        self._uso = (ahora, resultado)
+        return resultado
+
+
+def _serie_heaps(curva):
+    """{puntos, ajuste} de una curva [(x, V)]; el ajuste ignora el arranque (x < 10) si hay de sobra."""
+    ajustables = [(x, v) for x, v in curva if x >= 10]
+    ajuste = ajuste_potencia(*zip(*(ajustables if len(ajustables) >= 3 else curva))) if len(curva) >= 3 else None
+    return {
+        "puntos": [list(par) for par in curva],
+        "ajuste": None if ajuste is None else {
+            "beta": round(ajuste["exponente"], 3), "k": round(ajuste["constante"], 3),
+            "r2": round(ajuste["r2"], 3), "puntos": ajuste["puntos"],
+        },
+    }
+

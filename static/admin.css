@@ -1,0 +1,111 @@
+/* Panel de herramientas de prueba (solo si el servidor tiene ADMIN_TOKEN). Sigue la paleta de style.css */
+
+.herramientas {
+    margin: 0 0 1rem;
+    font-size: 0.8rem;
+    color: #4b5563;
+}
+
+.herramientas > summary {
+    cursor: pointer;
+    color: #6b7280;
+    text-align: center;
+}
+
+.herramientas-cuerpo {
+    display: grid;
+    gap: 0.7rem;
+    margin-top: 0.6rem;
+}
+
+.herramientas fieldset {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0.6rem 0.8rem 0.8rem;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+}
+
+.herramientas legend {
+    padding: 0 0.3rem;
+    color: #6b7280;
+}
+
+.herramientas label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.herramientas .campo {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+}
+
+.herramientas input[type="password"],
+.herramientas input[type="number"] {
+    font: inherit;
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+
+.herramientas .numeros {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+}
+
+.herramientas .numeros label {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+}
+
+.herramientas .acciones {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+}
+
+.herramientas button {
+    font: inherit;
+    padding: 0.35rem 0.8rem;
+    color: #1f2937;
+    background: #fff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.herramientas button:hover:not(:disabled) {
+    background: #eef2ff;
+}
+
+.herramientas button:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+.herramientas button.peligro {
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+
+.herramientas button.peligro:hover:not(:disabled) {
+    background: #fef2f2;
+}
+
+.admin-estado {
+    min-height: 1.2em;
+    margin: 0;
+    color: #4b5563;
+}
+
+.admin-estado.error {
+    color: #b91c1c;
+}

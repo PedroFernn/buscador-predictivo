@@ -16,13 +16,14 @@ def _entero(nombre, defecto, minimo=1):
 
 @dataclass(frozen=True)
 class Config:
-    database_url: Optional[str] = None       # sin definir: catalogo.json
+    database_url: Optional[str] = None       # sin definir: sqlite catalogo.db (raíz del proyecto)
     recarga_segundos: int = 0                # >0: reindexa el catálogo cuando tiene esa antigüedad
     senales_db: str = str(RAIZ / "senales.db")  # SQLite con reacciones, clics y consultas
     ventana_dias: int = 7                    # ventana de las sugerencias por frecuencia
     min_frecuencia: int = 3                  # una consulta se sugiere si se repitió al menos así
     bloqueados: Tuple[str, ...] = ()         # términos que nunca se cuentan ni se sugieren
     retencion_dias: int = 90                 # cuánto se conservan clics e impresiones
+    admin_token: Optional[str] = None        # sin definir: las herramientas de administración quedan apagadas
 
     @classmethod
     def desde_entorno(cls):
@@ -35,4 +36,7 @@ class Config:
             min_frecuencia=_entero("HISTORIAL_MIN_FRECUENCIA", 3),
             bloqueados=tuple(t for t in env.get("HISTORIAL_BLOQUEADOS", "").split(",") if t.strip()),
             retencion_dias=_entero("SENALES_RETENCION_DIAS", 90),
+            admin_token=env.get("ADMIN_TOKEN") or None,
         )
+
+

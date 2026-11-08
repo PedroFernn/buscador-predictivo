@@ -11,12 +11,15 @@ def servicio_senales():
 
 
 def registrar_blueprints(app):
+    from api.admin import bp_admin
+    from api.analitica import bp_analitica
     from api.buscar import bp_buscar
     from api.recomendaciones import bp_recomendaciones
     from api.senales import bp_senales
     from api.sugerencias import bp_sugerencias
 
-    for bp in (bp_buscar, bp_senales, bp_sugerencias, bp_recomendaciones):
+    for bp in (bp_buscar, bp_senales, bp_sugerencias, bp_recomendaciones, bp_admin, bp_analitica):
         app.register_blueprint(bp)
+
 
 

@@ -27,7 +27,7 @@ def _linea(valores, metricas, k):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--oro", default=str(RUTA_ORO), help="CSV del conjunto de oro")
-    ap.add_argument("--url", default=None, help="DATABASE_URL (sin definir: catalogo.json)")
+    ap.add_argument("--url", default=None, help="DATABASE_URL (sin definir: catalogo.db)")
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--mostrar", type=int, default=5, help="cuántas combinaciones imprimir")
     args = ap.parse_args()
@@ -65,3 +65,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

@@ -24,6 +24,12 @@ export function vaciarPendiente() {
     }
 }
 
+// Olvida la consulta pendiente SIN enviarla (p. ej. tras borrar las señales del servidor)
+export function descartarPendiente() {
+    clearTimeout(temporizador);
+    pendiente = null;
+}
+
 export function encolar(texto, inmediato) {
     const clave = normalizar(texto.trim());
     if (clave.length < 2) return;

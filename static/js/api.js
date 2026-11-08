@@ -51,3 +51,34 @@ export function pedirRecomendaciones(perfil, idioma, limite, senal) {
         signal: senal,
     });
 }
+
+// Página /analitica (ver api/analitica.py): catálogo, uso real y sondeo de una consulta
+export function analiticaCorpus() {
+    return pedirJSON("/api/analitica/corpus");
+}
+
+export function analiticaUso() {
+    return pedirJSON("/api/analitica/uso");
+}
+
+export function analiticaSondeo(consulta, senal) {
+    return pedirJSON(`/api/analitica/sondeo?q=${encodeURIComponent(consulta)}`, { signal: senal });
+}
+
+// Herramientas de administración (apagadas si el servidor no tiene ADMIN_TOKEN; ver api/admin.py).
+// Sin `cuerpo` es un GET; con él, un POST JSON. Lanza Error con el mensaje del servidor y `status`.
+export async function admin(ruta, token, cuerpo) {
+    const respuesta = await fetch(ruta, {
+        method: cuerpo === undefined ? "GET" : "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": token },
+        body: cuerpo === undefined ? undefined : JSON.stringify(cuerpo),
+    });
+    const datos = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok) {
+        const error = new Error(datos.error || `HTTP ${respuesta.status}`);
+        error.status = respuesta.status;
+        throw error;
+    }
+    return datos;
+}
+

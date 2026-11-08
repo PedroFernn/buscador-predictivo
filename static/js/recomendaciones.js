@@ -23,7 +23,8 @@ function tarjeta(item, alElegir) {
     const boton = elemento("recomendacion", "button");
     boton.type = "button";
     const motivos = (item.motivos || []).join(", ");
-    boton.title = [item.descripcion, motivos && `Porque te interesa: ${motivos}`].filter(Boolean).join("\n");
+    const puente = item.puente && `Terminaste «${item.puente.desde}»; la rama más cercana es «${item.puente.hacia}»`;
+    boton.title = [item.descripcion, puente || (motivos && `Porque te interesa: ${motivos}`)].filter(Boolean).join("\n");
     boton.append(
         elemento("emoji", "span", item.emoji),
         elemento("nombre", "span", item.nombre),
@@ -62,3 +63,5 @@ export async function actualizarRecomendaciones(refs, idioma, alElegir) {
     if (mia !== secuencia) return;  // respuesta vieja: se descarta
     pintar(refs, items, alElegir);
 }
+
+

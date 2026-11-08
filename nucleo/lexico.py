@@ -32,6 +32,17 @@ STOPWORDS = frozenset("""
     porque tambien tambem gracias thanks because also why
 """.split())
 
+
+def tokenizar_contenido(texto):
+    """Tokens de un texto sin palabras de relleno: lo que se indexa y se mide del catálogo.
+
+    Si el texto solo tiene relleno (un documento llamado «No»), conserva todos sus tokens para que
+    siga siendo encontrable; es la misma regla de `interpretar_consulta` y `clics.terminos_de`.
+    """
+    tokens = tokenizar(texto)
+    return [t for t in tokens if t not in STOPWORDS] or tokens
+
+
 # Grupos de conceptos equivalentes (es / en / pt). Buscar uno activa los demás.
 GRUPOS_SEMANTICOS = [
     "caro costoso costosa carisimo costly expensive pricey luxury lujo luxo "
@@ -73,3 +84,5 @@ def construir_sinonimos():
 
 
 SINONIMOS = construir_sinonimos()
+
+

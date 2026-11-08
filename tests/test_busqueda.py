@@ -47,7 +47,7 @@ def test_los_falsos_amigos_se_marcan_y_el_idioma_decide():
 def test_el_indice_acumula_postings_por_modo_y_ids():
     indice = construir_indice(RepoFalso(DOCS_PAN).listar())
     assert indice.ids == frozenset({1, 2, 3})
-    assert {p for p, _ in indice.postings["nombre"]["pan"]} == {0, 1, 2}
+    assert {p for p, _ in indice.postings["nombre"]["pan"].items()} == {0, 1, 2}
     assert len(indice.normas["sinopsis"]) == 3
     assert indice.emoji_a_docs["🍞"] == [1]
 
@@ -118,3 +118,21 @@ class TestDesglose:
     def test_sin_senales_el_desglose_es_neutro(self):
         e = Buscador(RepoFalso(DOCS_PAN)).buscar("pan", "es")["resultados"][0]["explicacion"]
         assert (e["reacciones"], e["aprendizaje"]) == (1.0, 1.0)
+
+
+
+
+def test_el_indice_no_guarda_palabras_de_relleno():
+    from nucleo.lexico import STOPWORDS
+    docs = [{"id": 1, "nombre": "Pan de muerto", "categoria": "Panadería",
+             "descripcion": "el pan de la tradición con azahar", "emoji": "🍞", "idioma": "es"}]
+    indice = construir_indice(docs)
+    for modo, postings in indice.postings.items():
+        assert not STOPWORDS & set(postings), modo
+    assert not STOPWORDS & set(indice.idf) and not STOPWORDS & set(indice.vectores["sinopsis"][0])
+
+
+def test_un_documento_solo_de_relleno_sigue_siendo_encontrable():
+    docs = [{"id": 1, "nombre": "No", "categoria": "Palabras", "descripcion": "", "emoji": "🚫", "idioma": "es"},
+            *DOCS_PAN]
+    assert 1 in ids(Buscador(RepoFalso(docs)).buscar("no", "es"))
